@@ -208,7 +208,9 @@ a brand-new tale for the very same pictures.
   person), the book photos, and a *Read me* page to browse, play and read every story's words. It's the
   family's copy to keep, whatever happens to the app or the subscriptions.
 - **Every wait says so.** A tap that opens a page shows at once that it's on its way; writing and recording a
-  story say about how long is left (and if it's taking longer than usual); the play button's ring turns while
+  story say about how long is left (and if it's taking longer than usual). The time shown while a story is
+  written counts the voices that record it next, so it's the wait until it's ready to hear, and every wait learns
+  from how long the last dozen like it really took, so it gets truer as you go. The play button's ring turns while
   a story loads on a weak signal. Adding sound effects to a recorded story counts only the new sounds (the
   voices are kept). Conjuring a voice, teaching the storytellers a family voice, and re-binding a story with
   new sounds each say about how long they take. Every upload says how far along it is (a child's drawing,
@@ -295,6 +297,10 @@ humming placeholder voices.
   and stops before it would pass what was approved. See `src/lib/server/illustrator.ts` and `src/lib/server/art.ts`.
 - **What things cost** is worked out from each service's reported usage (`src/lib/server/prices.ts`) and kept in
   the database (`src/lib/server/spending.ts`), so estimates follow what the family's stories have really cost.
+- **How long things take** is learned the same way: each finished writing, recording, planning, sketching and
+  drawing job is kept beside its rule of thumb (`src/lib/server/timing.ts`), and later waits go at the pace the last
+  dozen really went, with a fifth to spare. Until three have been timed, the rule of thumb stands. The test copy and
+  the live app each learn on their own.
 - **Sound effects** are placed by a small, separate Claude request that reads the finished script
   (`spotSoundEffects` in `src/lib/server/storyteller.ts`), made with ElevenLabs Sound Effects, and laid on
   the spoken word's timing about 8 dB under the narration (`src/lib/server/audio.ts`).

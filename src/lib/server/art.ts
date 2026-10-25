@@ -9,6 +9,7 @@ import { picturePrice } from "./prices";
 import { addToPurchase, getPurchase, recordSpend } from "./spending";
 import { planPictures, StorytellerError, type PicturePlan } from "./storyteller";
 import { demoPicturePlan } from "./demo-storyteller";
+import { expectedSeconds, noteWorkTime } from "./timing";
 import { ART_STYLES, DEFAULT_ART_STYLE, drawingSeconds, formatMoney, planningSeconds } from "@/lib/shared/art";
 import { MOODS } from "@/lib/shared/options";
 import type { ArtCharacter, ArtJob, ArtProblem, ArtStyle, DrawnBefore, Mood, StoryArt } from "@/lib/shared/types";
@@ -48,6 +49,10 @@ class MissedPictures extends IllustratorError {
 function launchArt(storyId: string, step: string, job: Omit<ArtJob, "finished" | "startedAt">, fn: () => Promise<void>): boolean {
   if (busy.has(storyId)) return false;
   busy.add(storyId);
+  // Real work is timed, so the waits like it say how long they really take (`job.seconds` is the rule of thumb);
+  // stand-ins and the demo storyteller take a moment.
+  const timed = job.kind === "planning" ? Boolean(config.anthropicKey) || !config.demoMode : illustratorReady();
+  const startedAt = Date.now();
   changeStoryArt(
     storyId,
     (a) =>
@@ -57,10 +62,13 @@ function launchArt(storyId: string, step: string, job: Omit<ArtJob, "finished" |
         error: null,
         problem: null,
         progress: { step, done: 0, total: job.total },
-        job: { ...job, finished: [], startedAt: Date.now() },
+        job: { ...job, seconds: timed ? expectedSeconds(job.kind, job.seconds) : job.seconds, finished: [], startedAt },
       },
   );
   fn()
+    .then(() => {
+      if (timed) noteWorkTime(job.kind, job.seconds, startedAt);
+    })
     .catch((err) => {
       console.error(`[art] ${storyId}`, err);
       const message = err instanceof IllustratorError || err instanceof StorytellerError ? err.message : "The illustrator hit a snag. Please try again.";

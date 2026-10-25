@@ -196,7 +196,7 @@ export function Pictures({
   const pages = story.script?.pages.length ?? 0;
   const working = Boolean(art && art.status !== "idle");
   const job = art?.job ?? null;
-  const planSeconds = planningSeconds(status.storyteller || !status.demoMode);
+  const planSeconds = planningSeconds(status.storyteller || !status.demoMode, status.pace?.planning);
 
   const run = async (fn: () => Promise<unknown>) => {
     setBusy(true);
@@ -299,8 +299,8 @@ export function Pictures({
   const todo = (art.cover ? 0 : 1) + art.pages.filter((p) => !p).length;
   const drawn = bookPictures(art.pages.length) - todo;
   const standIns = [art.cover, ...art.pages].some((p) => isStandIn(p)) || art.characters.some((c) => c.sketches.some(isStandIn));
-  const sketchSeconds = drawingSeconds(SKETCHES, false, status.illustrator);
-  const bookSeconds = drawingSeconds(todo, !art.cover, status.illustrator);
+  const sketchSeconds = drawingSeconds(SKETCHES, false, status.illustrator, status.pace?.sketching);
+  const bookSeconds = drawingSeconds(todo, !art.cover, status.illustrator, status.pace?.drawing);
   const pictureAt = (t: number) => (t === 0 ? art.cover : (art.pages[t - 1] ?? null));
   // The pictures the last drawing job couldn't make.
   const failedHere = art.error && art.problem?.kind === "drawing" ? (art.problem.targets ?? []) : [];
@@ -348,7 +348,7 @@ export function Pictures({
       offerPictures(
         `Sketches of ${andList(everyone.map((c) => c.name))} (${SKETCHES} each)`,
         SKETCHES * everyone.length,
-        drawingSeconds(SKETCHES * everyone.length, false, status.illustrator),
+        drawingSeconds(SKETCHES * everyone.length, false, status.illustrator, status.pace?.sketching),
         `/api/stories/${story.id}/art/sketch`,
         { characterIds: everyone.map((c) => c.id) },
       );
@@ -491,7 +491,7 @@ export function Pictures({
                   : `✏️ Sketch ${everyone.length === 1 ? everyone[0].name : `${everyone.length} characters`} · ${status.illustrator ? formatMoney(each * SKETCHES * everyone.length) : "free"}`}
               </button>
             </div>
-            <span className="small muted">Takes {aboutTime(drawingSeconds(SKETCHES * Math.max(1, everyone.length), false, status.illustrator))}.</span>
+            <span className="small muted">Takes {aboutTime(drawingSeconds(SKETCHES * Math.max(1, everyone.length), false, status.illustrator, status.pace?.sketching))}.</span>
           </div>
         )}
         {sketchProblem && !sketchProblem.characterId && <p className="notice notice-error small" style={{ margin: 0 }}>{art.error}</p>}
@@ -916,7 +916,7 @@ export function PagePicture({ story, status, page, onStory }: { story: Story; st
                 offerPictures(
                   `${url ? "Redraw" : "Draw"} ${cover ? "the cover" : `page ${page}`}`,
                   1,
-                  drawingSeconds(1, cover, status.illustrator),
+                  drawingSeconds(1, cover, status.illustrator, status.pace?.drawing),
                   `/api/stories/${story.id}/art/draw`,
                   { pages: [page], note },
                 )

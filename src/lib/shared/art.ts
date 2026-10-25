@@ -76,14 +76,17 @@ export const SKETCHES = 2;
 /** About how long one picture takes the illustrator. */
 const PICTURE_SECONDS = 25;
 
-/** About how long the illustrator takes for some pictures, two at a time (the cover first, on its own so the pages can match it). */
-export function drawingSeconds(pictures: number, coverFirst: boolean, real: boolean): number {
+/**
+ * About how long the illustrator takes for some pictures, two at a time (the cover first, on its own so the pages can
+ * match it), at `pace` times the rule of thumb: how it has really gone lately.
+ */
+export function drawingSeconds(pictures: number, coverFirst: boolean, real: boolean, pace = 1): number {
   if (!real) return 3;
-  return (coverFirst ? PICTURE_SECONDS : 0) + Math.ceil(Math.max(0, pictures - (coverFirst ? 1 : 0)) / 2) * PICTURE_SECONDS;
+  return Math.round(((coverFirst ? PICTURE_SECONDS : 0) + Math.ceil(Math.max(0, pictures - (coverFirst ? 1 : 0)) / 2) * PICTURE_SECONDS) * pace);
 }
 
-/** About how long the storyteller takes to plan a picture book's pictures (a moment, for the demo storyteller). */
-export const planningSeconds = (storyteller: boolean) => (storyteller ? 30 : 3);
+/** About how long the storyteller takes to plan a picture book's pictures (a moment, for the demo storyteller), at `pace`. */
+export const planningSeconds = (storyteller: boolean, pace = 1) => (storyteller ? Math.round(30 * pace) : 3);
 
 /** Stand-in pictures (made while the illustrator isn't set up) are drawings the app makes itself. */
 export const isStandIn = (url: string | null | undefined) => Boolean(url && /\.svg(\?|$)/.test(url));

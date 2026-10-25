@@ -16,6 +16,12 @@ import { formatMoney } from "@/lib/shared/art";
 import { PagePicture, Pictures } from "./Pictures";
 import type { AppStatus, Book, BookPage, ChimeSettings, DrawnBefore, Story, StoryScript, VoiceOption } from "@/lib/shared/types";
 
+/** Whether someone is typing into the page just now. */
+function typing(): boolean {
+  const el = document.activeElement;
+  return el instanceof HTMLTextAreaElement || (el instanceof HTMLInputElement && el.type === "text");
+}
+
 export function Studio({
   initial,
   book,
@@ -80,10 +86,11 @@ export function Studio({
     return res.story;
   }, [api, story.id, dirty, router]);
 
-  // Starting work (recording, rewriting, a new reader) and finishing it both change what's at the top of the page: go there.
+  // Starting work (recording, rewriting, a new reader) and finishing it both change what's at the top of the page: go there,
+  // unless someone is typing (a character's look while the voices record, say), who stays where they are.
   const wasWorking = useRef(working);
   useEffect(() => {
-    if (working !== wasWorking.current) toTop();
+    if (working !== wasWorking.current && !typing()) toTop();
     wasWorking.current = working;
   }, [working]);
 
@@ -105,8 +112,12 @@ export function Studio({
   // Leading the page, they have the way to listen just below them, so they don't offer it too.
   const [picturesFirst, setPicturesFirst] = useState<boolean | null>(canPicture ? picturesToMake : null);
   if (picturesFirst === null && canPicture) setPicturesFirst(picturesToMake);
+  // The same panel all along, while the voices record and once the story is ready: the page around it changes, and the
+  // key finds it again in its new place (both views share the outer stack), so a character's look half typed, a sketch
+  // being chosen or a purchase half done carries on instead of starting over.
   const pictures = canPicture && (
     <Pictures
+      key="pictures"
       story={story}
       status={status}
       spent={spent}
@@ -217,7 +228,7 @@ export function Studio({
       <Brewing
         title={story.mode === "read" ? "Preparing the reading" : "The storyteller is at work"}
         progress={story.progress}
-        note="You can leave this page. The story keeps brewing and will be waiting on the shelf."
+        note={`${story.settings.review ? "" : `${story.mode === "read" ? "Once the words are ready" : "Once it's written"}, the voices record it, and the time left counts both. `}You can leave this page. The story keeps brewing and will be waiting on the shelf.`}
       />
     );
   }

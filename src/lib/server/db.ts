@@ -228,6 +228,16 @@ CREATE TABLE IF NOT EXISTS spending (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS spending_household ON spending (household_id, created_at);
+
+-- How long the slow work (writing, recording, pictures) really took, beside what its rule of thumb said, both in
+-- seconds: later waits are judged from it. Only the latest of each kind are kept.
+CREATE TABLE IF NOT EXISTS work_times (
+  work TEXT NOT NULL,
+  guess REAL NOT NULL,
+  took REAL NOT NULL,
+  finished_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS work_times_by_work ON work_times (work, finished_at);
 `;
 
 type Row = Record<string, unknown>;
@@ -1348,4 +1358,22 @@ export function recentAlerts(limit = 5): AlertRecord[] {
     ok: Boolean(r.ok),
     error: (r.error as string | null) ?? null,
   }));
+}
+
+// --------------------------------------------------------------------- how long work takes
+
+/** The latest times for a kind of work, newest first: what its rule of thumb said, and what it took (seconds). */
+export function recentWorkTimes(work: string, limit: number): { guess: number; took: number }[] {
+  return (db().prepare("SELECT guess, took FROM work_times WHERE work = ? ORDER BY finished_at DESC, rowid DESC LIMIT ?").all(work, limit) as Row[]).map(
+    (r) => ({ guess: Number(r.guess), took: Number(r.took) }),
+  );
+}
+
+/** Some work finished: how long it took, beside what its rule of thumb said. The latest 50 of each kind are kept. */
+export function saveWorkTime(work: string, guess: number, took: number) {
+  const conn = db();
+  conn.prepare("INSERT INTO work_times (work, guess, took, finished_at) VALUES (?, ?, ?, ?)").run(work, guess, took, Date.now());
+  conn
+    .prepare("DELETE FROM work_times WHERE work = ? AND rowid NOT IN (SELECT rowid FROM work_times WHERE work = ? ORDER BY finished_at DESC, rowid DESC LIMIT 50)")
+    .run(work, work);
 }

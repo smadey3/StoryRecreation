@@ -5,6 +5,7 @@ import { appStatus } from "@/lib/server/config";
 import { artBusy, drawnBeforeUrls, resumeLostArt } from "@/lib/server/art";
 import { planCostGuess } from "@/lib/server/prices";
 import { pictureSpendForStory, writeCosts } from "@/lib/server/spending";
+import { picturePace } from "@/lib/server/timing";
 import { Studio } from "./Studio";
 
 export default async function StoryPage(props: PageProps<"/stories/[id]">) {
@@ -24,7 +25,7 @@ export default async function StoryPage(props: PageProps<"/stories/[id]">) {
         initial={story}
         book={book}
         photos={listPages(book.id)}
-        status={appStatus()}
+        status={{ ...appStatus(), pace: picturePace() }}
         pictureSpend={pictureSpendForStory(id)}
         drawnBefore={drawnBeforeUrls(ctx.household.id, id)}
         planPrice={planCostGuess(words, story.script?.pages.length ?? 6)}

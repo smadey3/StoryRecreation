@@ -28,9 +28,11 @@ import { alertStoryFailed, checkVoiceCreditLow } from "./alerts";
 import { recordSpend } from "./spending";
 import { planPicturesAfterWriting } from "./art";
 import { sectionText, stripTags, withTheEnd } from "./text";
+import { expectedSeconds, noteWorkTime } from "./timing";
 import { personaFor } from "@/lib/shared/personas";
 import { SAYINGS, guessLanguage, languageOf } from "@/lib/shared/languages";
-import type { ScriptLine, ScriptPage, SoundCue, StoryScript, StorySettings } from "@/lib/shared/types";
+import { LENGTHS, WORDS_PER_MINUTE, estimateMinutes } from "@/lib/shared/options";
+import type { ScriptLine, ScriptPage, SoundCue, Story, StoryScript, StorySettings } from "@/lib/shared/types";
 
 // Stories are written and recorded in the background so a phone can lock, or
 // a parent can wander off to brush teeth, without losing anything. Progress
@@ -71,21 +73,40 @@ function launch(key: string, storyId: string, fn: () => Promise<(() => void) | v
 
 export function startWriting(storyId: string) {
   const story = getStoryById(storyId);
-  const progress = { step: "Opening the book", done: 0, total: 1, startedAt: Date.now(), seconds: story ? writingSeconds(story.settings, story.mode) : 60 };
+  const work = story?.mode === "read" ? "reading" : "writing";
+  const guess = story ? writingSeconds(story.settings, story.mode) : null;
+  const startedAt = Date.now();
+  const progress = { step: "Opening the book", done: 0, total: 1, startedAt, seconds: story && guess ? readyInSeconds(story, guess) : 5 };
   updateStory(storyId, { status: "writing", error: null, progress });
-  launch("write", storyId, () => writeStory(storyId));
+  launch("write", storyId, async () => {
+    const next = await writeStory(storyId);
+    if (guess) noteWorkTime(work, guess, startedAt);
+    return next;
+  });
 }
 
 /**
- * About how long the storyteller takes to write (or prepare the reading of) a story, by its length, a little
- * longer when it reads photos first. Read word for word by one reader, it's a moment.
+ * How long until a story the storyteller is about to write (taking about `writing` seconds, by the rule of thumb) is
+ * ready to hear: the writing, then the voices, unless the family reads it over first. The family waits for both, so
+ * the wait they're told is both.
  */
-function writingSeconds(s: StorySettings, mode: string): number {
-  if (!config.anthropicKey && config.demoMode) return 5;
-  if ((s.source === "classic" || s.source === "text") && !s.fullCast) return 5;
-  const photos = s.source === "book" || s.source === "book_read" || s.source === "wild" ? 15 : 0;
-  if (mode === "read") return 45 + photos;
-  return { short: 40, medium: 60, long: 90 }[s.length] + photos;
+export function readyInSeconds(story: Story, writing: number): number {
+  const voices = story.settings.review ? null : unwrittenRecordingSeconds(story);
+  return expectedSeconds(story.mode === "read" ? "reading" : "writing", writing) + (voices ? expectedSeconds("recording", voices) : 0);
+}
+
+/**
+ * About how long the storyteller takes to write (or prepare the reading of) a story, by its length, a little longer
+ * when it reads photos first; null when there's no storyteller to wait for (words read just as they're written, or the
+ * demo), which takes a moment. Twice the first guesses, which families found far too short; the waits also learn
+ * from every story since (timing.ts).
+ */
+function writingSeconds(s: StorySettings, mode: string): number | null {
+  if (!config.anthropicKey && config.demoMode) return null;
+  if ((s.source === "classic" || s.source === "text") && !s.fullCast) return null;
+  const photos = s.source === "book" || s.source === "book_read" || s.source === "wild" ? 30 : 0;
+  if (mode === "read") return 90 + photos;
+  return { short: 80, medium: 120, long: 180 }[s.length] + photos;
 }
 
 function pageCountFor(source: string, length: string, photos: number): number {
@@ -211,26 +232,56 @@ export function applyPhotoOrder(householdId: string, bookId: string, sent: PageR
 export function startRecording(storyId: string) {
   const story = getStoryById(storyId);
   const step = story?.audioUrl ? "Opening the recordings" : "Warming up the voices";
-  const seconds = story?.script ? recordingSeconds(story.script, story.settings, storyDir(story.householdId, storyId)) : 60;
-  updateStory(storyId, { status: "recording", error: null, progress: { step, done: 0, total: 1, startedAt: Date.now(), seconds } });
-  launch("record", storyId, () => recordStory(storyId));
+  const guess = story?.script ? recordingSeconds(story.script, story.settings, storyDir(story.householdId, storyId)) : null;
+  const startedAt = Date.now();
+  const seconds = guess ? expectedSeconds("recording", guess) : 5;
+  updateStory(storyId, { status: "recording", error: null, progress: { step, done: 0, total: 1, startedAt, seconds } });
+  launch("record", storyId, async () => {
+    await recordStory(storyId);
+    if (guess) noteWorkTime("recording", guess, startedAt);
+  });
 }
 
 /**
- * About how long the voices take to record a story: by how long it is to listen to (the voices are made two pages
- * at a time, a few times faster than they're heard), with a little for the welcome, sounds and binding it together.
- * Only what isn't made yet counts: switching sound effects on keeps the voices, so it's just the new sounds.
+ * About how long the voices take to record a story, by the rule of thumb: only what isn't made yet counts (switching
+ * sound effects on keeps the voices, so it's just the new sounds). Null for the demo's voices, which take a moment.
  */
-function recordingSeconds(script: StoryScript, s: StorySettings, dir: string): number {
-  if (!config.elevenLabsKey && config.demoMode) return 5;
+function recordingSeconds(script: StoryScript, s: StorySettings, dir: string): number | null {
+  if (!config.elevenLabsKey && config.demoMode) return null;
   const toVoice = script.pages.filter((p) => !isRecorded(dir, pageClip(p.page), p.lines, script));
-  const chars = toVoice.reduce((n, p) => n + p.lines.reduce((m, l) => m + stripTags(l.text).length, 0), 0);
+  return voicingSeconds(toVoice.reduce((n, p) => n + p.lines.reduce((m, l) => m + stripTags(l.text).length, 0), 0), {
+    welcome: s.intro && !fs.existsSync(path.join(dir, "intro-a.json")),
+    soundscape: Boolean(s.ambience && script.ambience && !fs.existsSync(ambienceFile(dir, script.ambience))),
+    effects: !s.effects ? 0 : script.effects ? script.effects.filter((cue) => !fs.existsSync(effectFile(dir, cue))).length : null,
+  });
+}
+
+/** The same, for a story not written yet: as long as stories like it usually run. */
+function unwrittenRecordingSeconds(story: Story): number | null {
+  if (!config.elevenLabsKey && config.demoMode) return null;
+  const s = story.settings;
+  const pages = s.source === "book" || s.source === "book_read" ? listPageRows(story.bookId).length : 0;
+  // A book read aloud from its photos: about 200 letters a page. Anything else, by the length chosen.
+  const chars =
+    s.source === "book_read"
+      ? pages * 200
+      : s.source === "text"
+        ? (s.text ?? "").length
+        : (s.source === "book" ? estimateMinutes(s.length, Math.max(1, pages)) : LENGTHS[s.length].minutes) * WORDS_PER_MINUTE * 6;
+  return voicingSeconds(chars, { welcome: s.intro, soundscape: s.ambience, effects: s.effects ? null : 0 });
+}
+
+/**
+ * The rule of thumb for recording `chars` letters of words: the voices are made two pages at a time, a few times
+ * faster than they're heard, with a little for the welcome, a soundscape and binding it all together. `effects` is how
+ * many sound effects to make, or null when they're still to be chosen (a quick word with the storyteller, then a few
+ * seconds each). Twice the first guesses, which families found far too short; the waits also learn from every story
+ * since (timing.ts).
+ */
+function voicingSeconds(chars: number, extras: { welcome: boolean; soundscape: boolean; effects: number | null }): number {
   const listening = chars / 15;
-  const welcome = s.intro && !fs.existsSync(path.join(dir, "intro-a.json")) ? 6 : 0;
-  const soundscape = s.ambience && script.ambience && !fs.existsSync(ambienceFile(dir, script.ambience)) ? 8 : 0;
-  // Choosing the sound effects (the first time) is a quick word with the storyteller; then a few seconds for each one made.
-  const effects = !s.effects ? 0 : script.effects ? 4 * script.effects.filter((cue) => !fs.existsSync(effectFile(dir, cue))).length : 25;
-  return Math.round(10 + listening * 0.15 + welcome + soundscape + effects);
+  const effects = extras.effects === null ? 50 : 8 * extras.effects;
+  return Math.round(20 + listening * 0.3 + (extras.welcome ? 12 : 0) + (extras.soundscape ? 16 : 0) + effects);
 }
 
 function introLines(

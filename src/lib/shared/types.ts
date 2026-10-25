@@ -398,6 +398,15 @@ export interface AppStatus {
   pictureModel: string;
   /** About what one picture costs, in millionths of a dollar (what it would cost, while stand-ins are free). */
   picturePrice: number;
+  /** How the pictures' waits have really gone lately, where the page estimates them (1 = as the rule of thumb says). */
+  pace?: PicturePace;
+}
+
+/** How many times its rule of thumb each kind of picture work has really taken lately. */
+export interface PicturePace {
+  planning: number;
+  sketching: number;
+  drawing: number;
 }
 
 /** What the family has spent, for the Grown-ups' corner. Amounts are millionths of a dollar. */
