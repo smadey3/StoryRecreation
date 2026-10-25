@@ -23,11 +23,37 @@ export class BackupError extends Error {}
 /** Just enough of the S3 API (put, list, delete) for any S3-compatible storage. */
 export class BucketClient {
   private aws: AwsClient;
+  private endpoint: string;
+  private bucket: string;
   private base: string;
 
   constructor(store: BackupStorage) {
     this.aws = new AwsClient({ accessKeyId: store.keyId, secretAccessKey: store.secret, region: store.region, service: "s3" });
+    this.endpoint = store.endpoint;
+    this.bucket = store.bucket;
     this.base = `${store.endpoint}/${encodeURIComponent(store.bucket)}`;
+  }
+
+  /** The buckets this key can see, or none if it isn't allowed to list them. */
+  async buckets(): Promise<string[]> {
+    try {
+      const res = await this.aws.fetch(`${this.endpoint}/`, { method: "GET" });
+      if (!res.ok) return [];
+      return [...(await res.text()).matchAll(/<Bucket>[\s\S]*?<Name>([\s\S]*?)<\/Name>/g)].map((m) => unescapeXml(m[1]));
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * What to say when there's no bucket by the name given: the names of the ones this key can see, asked of the
+   * storage itself, so the right one can be copied into BACKUP_BUCKET without signing in to the storage's website.
+   */
+  private async noSuchBucket(): Promise<string> {
+    const seen = await this.buckets();
+    const missing = `The backup storage has no bucket called “${this.bucket}”.`;
+    if (!seen.length) return `${missing} Check BACKUP_BUCKET: it must match the bucket's name exactly.`;
+    return `${missing} This key can see ${seen.map((name) => `“${name}”`).join(", ")}: set BACKUP_BUCKET to ${seen.length === 1 ? "that" : "one of those"}, exactly.`;
   }
 
   private url(key: string) {
@@ -47,7 +73,7 @@ export class BucketClient {
       const message = body.match(/<Message>([^<]+)<\/Message>/)?.[1];
       if (res.status === 403 || code === "InvalidAccessKeyId" || code === "SignatureDoesNotMatch" || code === "AccessDenied")
         throw new BackupError(`The backup storage turned the key down (${code ?? res.status}). Check BACKUP_KEY_ID and BACKUP_SECRET_KEY.`);
-      if (code === "NoSuchBucket") throw new BackupError("The backup storage has no bucket by that name. Check BACKUP_BUCKET.");
+      if (code === "NoSuchBucket") throw new BackupError(await this.noSuchBucket());
       throw new BackupError(`Couldn't ${what} (${[res.status, code, message].filter(Boolean).join(" · ")}).`);
     }
     return res;

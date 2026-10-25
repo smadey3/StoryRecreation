@@ -32,6 +32,11 @@ before(async () => {
         return res.end("<Error><Code>InvalidAccessKeyId</Code><Message>Bad key</Message></Error>");
       }
       const url = new URL(req.url!, "http://x");
+      if (req.method === "GET" && url.pathname === "/") {
+        // the buckets this key can see
+        res.writeHead(200, { "content-type": "application/xml" });
+        return res.end(`<ListAllMyBucketsResult><Buckets><Bucket><Name>${BUCKET}</Name><CreationDate>2026-01-01T00:00:00.000Z</CreationDate></Bucket></Buckets></ListAllMyBucketsResult>`);
+      }
       const [, bucket, ...rest] = url.pathname.split("/");
       if (bucket !== BUCKET) return res.writeHead(404).end("<Error><Code>NoSuchBucket</Code></Error>");
       const key = rest.map(decodeURIComponent).join("/");
@@ -149,6 +154,18 @@ test("a key the storage turns down is explained, and the failed night is recorde
     assert.equal(status.lastGood?.ok, true, "the last good backup is still known");
   } finally {
     process.env.BACKUP_KEY_ID = "KEY123";
+  }
+});
+
+test("a bucket name that's wrong is explained with the names of the buckets the key can see", async () => {
+  const { runBackup } = await import("@/lib/server/offsite");
+  process.env.BACKUP_BUCKET = "family-backup";
+  try {
+    const failed = await runBackup();
+    assert.equal(failed.ok, false);
+    assert.match(failed.error!, /no bucket called “family-backup”\. This key can see “family-backups”: set BACKUP_BUCKET to that/);
+  } finally {
+    process.env.BACKUP_BUCKET = BUCKET;
   }
 });
 

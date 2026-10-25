@@ -522,7 +522,9 @@ S3. Make a **private** bucket and a key that can read and write only that bucket
 
 Backups start a few minutes after the app does, then run whenever the last good one is a day old (a failed one is
 tried again within the hour). After the first, only new or changed files are sent. The Grown-ups' corner shows how
-the last one went and has a **Back up now** button. Each copy of the app keeps its own folder in the bucket
+the last one went and has a **Back up now** button. If `BACKUP_BUCKET` doesn't match a bucket, the message names
+the buckets the key can see (the storage is asked), so the right name can be copied in without signing in to the
+storage's website. Each copy of the app keeps its own folder in the bucket
 (`production/`, `staging/`), holding `files/` (the data folder) and `database/` (the latest copy plus one a day for
 two weeks; the Gutenberg catalogue is left out, since it's fetched again by itself).
 
