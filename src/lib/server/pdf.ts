@@ -11,20 +11,32 @@ import type { Book, BookPage, ScriptLine, Story, StoryLanguage } from "@/lib/sha
 import { resolveHouseholdPath } from "./files";
 import { stripTags } from "./text";
 
-// A story as a book to keep, share or print: a cover, its pages (each page's picture, with its words beneath), and
-// The End. Six by nine inches, a usual size for a book, in the app's own type: IM Fell English for titles, and Andika,
-// made for children learning to read, for the words. Pictures are made just big enough for the page, so a picture
-// book stays small enough to send by message or email.
+// A story as a book to keep, share or print: a cover, its pages (each page's picture with its words beneath), and The
+// End, in the app's own type: IM Fell English for titles, and Andika, made for children learning to read, for the
+// words. A story with pictures gets pages made to fit them: each picture across the top, as wide as the page, its words
+// just beneath, and the page only as tall as they need, so there's as little empty paper as can be. The words alone
+// are set on pages six by nine inches, a usual size for a book. Pictures are made just big enough for the page, so a
+// picture book stays small enough to send by message or email.
 
-const W = 432;
-const H = 648;
-const MARGIN = 40;
-const TOP = H - 46;
-const BOTTOM = 54;
-const WIDTH = W - MARGIN * 2;
-const AREA = TOP - BOTTOM;
-/** Between a picture and its words. */
-const GAP = 20;
+/** A page's shape, and where the words go on it when they have it to themselves. */
+interface Sheet {
+  w: number;
+  h: number;
+  top: number;
+  bottom: number;
+  /** The words' column, on their own: where it starts and how wide it is. */
+  x: number;
+  width: number;
+}
+/** Six by nine inches, for the words alone. */
+const TALL: Sheet = { w: 432, h: 648, top: 602, bottom: 54, x: 40, width: 352 };
+/** The words' size on their own, and beneath a picture (the largest that fits). */
+const ALONE = 13.5;
+const SIZES = [14, 13, 12];
+/** A picture page's edges, the space between a picture and its words, and the room at the foot for the page's number. */
+const EDGE = 24;
+const GAP = 14;
+const FOOT = 30;
 
 const INK = rgb(0.23, 0.13, 0.07);
 const SOFT = rgb(0.45, 0.34, 0.22);
@@ -52,12 +64,12 @@ function readFonts() {
 /** The book's own words, in the story's language. */
 const WORDS: Record<StoryLanguage, { theEnd: string; more: string; chapter: string; page: string; quotes: [string, string] }> = {
   en: { theEnd: "The End", more: "To be continued…", chapter: "Chapter", page: "Page", quotes: ["“", "”"] },
-  fr: { theEnd: "Fin", more: "À suivre…", chapter: "Chapitre", page: "Page", quotes: ["« ", " »"] },
+  fr: { theEnd: "Fin", more: "À suivre…", chapter: "Chapitre", page: "Page", quotes: ["«\u00a0", "\u00a0»"] },
   es: { theEnd: "Fin", more: "Continuará…", chapter: "Capítulo", page: "Página", quotes: ["«", "»"] },
 };
 
 /** French puts a space inside « » and before ! ? ; : that mustn't be split from them at the end of a line. */
-const frenchSpaces = (text: string) => text.replace(/«\s*/g, "« ").replace(/\s*([»!?;:])/g, " $1");
+const frenchSpaces = (text: string) => text.replace(/«\s*/g, "«\u00a0").replace(/\s*([»!?;:])/g, "\u00a0$1");
 
 /**
  * A page's lines as a printed book has them: the narration in paragraphs, and what the characters say in quotation
@@ -123,7 +135,7 @@ function printable(font: PDFFont, text: string): string {
   let chars = charSets.get(font);
   if (!chars) charSets.set(font, (chars = new Set(font.getCharacterSet())));
   let out = "";
-  for (const ch of text.replace(/ /g, " ")) out += chars.has(ch.codePointAt(0)!) ? ch : /\s/.test(ch) ? " " : "";
+  for (const ch of text.replace(/\u202f/g, "\u00a0")) out += chars.has(ch.codePointAt(0)!) ? ch : /\s/.test(ch) ? " " : "";
   return out.replace(/ {2,}/g, " ").trim();
 }
 
@@ -164,54 +176,56 @@ function balanced(text: string, font: PDFFont, size: number, width: number): str
   return wrap(text, font, size, hi);
 }
 
-const linesOf = (blocks: Block[]): Line[] =>
+/** Blocks in lines no wider than a column `width` wide. */
+const linesOf = (blocks: Block[], width: number): Line[] =>
   blocks.flatMap((b) => {
-    const texts = wrap(printable(b.style.font, b.text), b.style.font, b.style.size, WIDTH);
+    const texts = wrap(printable(b.style.font, b.text), b.style.font, b.style.size, width);
     return texts.map((text, i) => ({ ...b, text, before: i ? 0 : b.before, first: i === 0, last: i === texts.length - 1 }));
   });
 
 /** How tall lines are, set together. */
 const heightOf = (lines: Block[]) => lines.reduce((h, l, i) => h + (i ? l.before : 0) + l.style.leading, 0);
 
-function drawLine(page: PDFPage, l: Block, bottom: number) {
+/** A line in the column from `x`, `width` wide (centred in it, for a centred style). */
+function drawLine(page: PDFPage, l: Block, x: number, width: number, bottom: number) {
   const { font, size, leading, color, center } = l.style;
-  const x = center ? (W - font.widthOfTextAtSize(l.text, size)) / 2 : MARGIN;
-  page.drawText(l.text, { x, y: bottom + (leading - size) / 2 + size * 0.22, size, font, color });
+  const left = center ? x + (width - font.widthOfTextAtSize(l.text, size)) / 2 : x;
+  page.drawText(l.text, { x: left, y: bottom + (leading - size) / 2 + size * 0.22, size, font, color });
 }
 
-/** Lines set from `top` down; where they end. */
-function drawLines(page: PDFPage, lines: Block[], top: number): number {
+/** Lines set in a column from `top` down; where they end. */
+function drawLines(page: PDFPage, lines: Block[], x: number, width: number, top: number): number {
   let y = top;
   lines.forEach((l, i) => {
     y -= (i ? l.before : 0) + l.style.leading;
-    drawLine(page, l, y);
+    drawLine(page, l, x, width, y);
   });
   return y;
 }
 
 /**
- * Lines poured onto the page from `from` down (or from the top of a new page), onto a new page whenever one is full.
- * A heading never ends a page, and a paragraph never leaves one line alone: its first at the foot of a page, or its
- * last at the top of the next. Where they end.
+ * Lines poured into the sheet's column from `from` down (or from the top of a new page), onto a new page whenever one
+ * is full. A heading never ends a page, and a paragraph never leaves one line alone: its first at the foot of a page,
+ * or its last at the top of the next. Where they end.
  */
-function pour(lines: Line[], newPage: () => PDFPage, from?: { page: PDFPage; y: number }): { page: PDFPage; y: number } {
+function pour(sheet: Sheet, lines: Line[], newPage: () => PDFPage, from?: { page: PDFPage; y: number }): { page: PDFPage; y: number } {
   // First where each line goes (which page, counting from the first, and how low), then they're set.
-  const spots: { sheet: number; y: number; top: boolean }[] = [];
-  let sheet = 0;
-  let y = from?.y ?? TOP;
+  const spots: { page: number; y: number; top: boolean }[] = [];
+  let n = 0;
+  let y = from?.y ?? sheet.top;
   let fresh = !from;
   for (let i = 0; i < lines.length; i++) {
     const l = lines[i];
     const next = l.heading ? lines[i + 1] : undefined;
     const need = (fresh ? 0 : l.before) + l.style.leading + (next ? next.before + next.style.leading : 0);
-    if (!fresh && y - need < BOTTOM) {
+    if (!fresh && y - need < sheet.bottom) {
       const prev = spots[i - 1];
-      [sheet, y, fresh] = [sheet + 1, TOP, true];
-      if (prev && prev.sheet === sheet - 1 && !prev.top && !l.first && (lines[i - 1].first || l.last)) {
+      [n, y, fresh] = [n + 1, sheet.top, true];
+      if (prev && prev.page === n - 1 && !prev.top && !l.first && (lines[i - 1].first || l.last)) {
         // The line before comes over to the new page too, and a heading just above it.
         let k = i - 1;
         spots.pop();
-        while (k > 0 && lines[k - 1].heading && spots[k - 1].sheet === sheet - 1 && !spots[k - 1].top) {
+        while (k > 0 && lines[k - 1].heading && spots[k - 1].page === n - 1 && !spots[k - 1].top) {
           spots.pop();
           k--;
         }
@@ -220,29 +234,28 @@ function pour(lines: Line[], newPage: () => PDFPage, from?: { page: PDFPage; y: 
       }
     }
     y -= (fresh ? 0 : l.before) + l.style.leading;
-    spots.push({ sheet, y, top: fresh });
+    spots.push({ page: n, y, top: fresh });
     fresh = false;
   }
   let page = from?.page ?? newPage();
   let at = 0;
   lines.forEach((l, i) => {
-    for (; at < spots[i].sheet; at++) page = newPage();
-    drawLine(page, l, spots[i].y);
+    for (; at < spots[i].page; at++) page = newPage();
+    drawLine(page, l, sheet.x, sheet.width, spots[i].y);
   });
   return { page, y };
 }
 
-/** A small gold flourish: a line, a diamond, a line. */
-function flourish(page: PDFPage, y: number) {
-  const cx = W / 2;
+/** A small gold flourish centred on `cx`: a line, a diamond, a line. */
+function flourish(page: PDFPage, cx: number, y: number) {
   page.drawLine({ start: { x: cx - 70, y }, end: { x: cx - 12, y }, thickness: 0.75, color: GOLD });
   page.drawLine({ start: { x: cx + 12, y }, end: { x: cx + 70, y }, thickness: 0.75, color: GOLD });
   page.drawSvgPath("M 0 -4.5 L 4.5 0 L 0 4.5 L -4.5 0 Z", { x: cx, y, color: GOLD });
 }
 
-function pageNumber(page: PDFPage, fonts: Fonts, n: number) {
+function pageNumber(page: PDFPage, sheet: Sheet, fonts: Fonts, n: number) {
   const text = String(n);
-  page.drawText(text, { x: (W - fonts.words.widthOfTextAtSize(text, 10)) / 2, y: 26, size: 10, font: fonts.words, color: SOFT });
+  page.drawText(text, { x: (sheet.w - fonts.words.widthOfTextAtSize(text, 10)) / 2, y: sheet.bottom / 2 - 2, size: 10, font: fonts.words, color: SOFT });
 }
 
 /** A picture's size to fit within `width` × `height`. */
@@ -335,13 +348,13 @@ export async function storyPdf({ householdId, familyName, story, book, photos }:
   doc.setProducer("Storyhollow");
   doc.setLanguage(language);
 
-  const body = (size: number): Style => ({ font: fonts.words, size, leading: size * 1.5, color: INK });
+  const body = (size: number): Style => ({ font: fonts.words, size, leading: size * 1.42, color: INK });
   /** A page's words: its heading (if it has one), its paragraphs, and its English for a story in another language. */
   const blocksOf = (p: (typeof pages)[number], size: number, heading?: string, lead = 0): Block[] => {
     const style = body(size);
     // (Headings are in the words' type: the title type's old-style numbers read oddly in "Page 1".)
     const blocks: Block[] = heading ? [{ text: heading, style: { font: fonts.words, size: 15, leading: 22, color: GOLD }, before: lead || 34, heading: true }] : [];
-    pageParagraphs(p.lines, language).forEach((text, i) => blocks.push({ text, style, before: i || heading ? (i ? size * 0.6 : 4) : lead }));
+    pageParagraphs(p.lines, language).forEach((text, i) => blocks.push({ text, style, before: i || heading ? (i ? size * 0.5 : 4) : lead }));
     const english = language !== "en" ? p.translation?.trim() : "";
     if (english && blocks.length) {
       const italic: Style = { font: fonts.wordsItalic, size: size * 0.82, leading: size * 1.2, color: SOFT };
@@ -351,12 +364,39 @@ export async function storyPdf({ householdId, familyName, story, book, photos }:
     return blocks;
   };
 
-  // The cover: the picture (if there is one), the title, and who it's from.
+  // A story with pictures gets pages made to fit them: ten inches across for pictures wider than they're tall (a picture
+  // book's are drawn 4:3), seven and a half for taller ones, each picture as wide as the page allows, and the page as
+  // tall as the picture and the words beneath it need: room for the words of all but its wordiest pages (a page with
+  // more makes do with smaller words, then a smaller picture), so one long page doesn't leave the rest half empty.
+  const pictured = pages.some((p) => picture(pictureOf(p.page)));
+  const shapes = [coverUrl, ...pages.map((p) => pictureOf(p.page))]
+    .map(picture)
+    .filter((i): i is PDFImage => i !== null)
+    .map((i) => i.height / i.width)
+    .sort((a, b) => a - b);
+  const aspect = shapes[Math.floor(shapes.length / 2)] ?? 0.75;
+  const pageWidth = aspect <= 1 ? 720 : 540;
+  const column = pageWidth - EDGE * 2;
+  const box = { w: column, h: Math.round(column * aspect) };
+  const needs = pages
+    .filter((p) => picture(pictureOf(p.page)))
+    .map((p) => heightOf(linesOf(blocksOf(p, SIZES[0]), column)))
+    .sort((a, b) => a - b);
+  const band = Math.min(box.h * 0.4, needs[Math.ceil(needs.length * 0.75) - 1] ?? 0);
+  const fitted = Math.round(EDGE + box.h + (band ? GAP + band : 0) + FOOT);
+  const alone = Math.min(column, 560);
+  const sheet: Sheet = pictured ? { w: pageWidth, h: fitted, top: fitted - EDGE, bottom: FOOT, x: (pageWidth - alone) / 2, width: alone } : TALL;
+  const newPage = () => doc.addPage([sheet.w, sheet.h]);
+  const area = sheet.top - sheet.bottom;
+
+  // The cover: its picture across the top, the title beneath, and who it's from.
   {
-    const page = doc.addPage([W, H]);
+    const page = newPage();
+    const cover = picture(coverUrl);
+    const [x, width] = pictured ? [EDGE, column] : [sheet.x, sheet.width];
     let size = 30;
-    let titleLines = balanced(printable(fonts.title, script.title), fonts.title, size, WIDTH);
-    while (titleLines.length > 3 && size > 18) titleLines = balanced(printable(fonts.title, script.title), fonts.title, (size -= 2), WIDTH);
+    let titleLines = balanced(printable(fonts.title, script.title), fonts.title, size, width);
+    while (titleLines.length > (pictured ? 2 : 3) && size > 18) titleLines = balanced(printable(fonts.title, script.title), fonts.title, (size -= 2), width);
     const title: Block[] = titleLines.map((text) => ({ text, style: { font: fonts.title, size, leading: size * 1.18, color: INK, center: true }, before: 0 }));
     const small: Style = { font: fonts.words, size: 11.5, leading: 17, color: SOFT, center: true };
     const notes = [
@@ -364,51 +404,55 @@ export async function storyPdf({ householdId, familyName, story, book, photos }:
       ...(story.mode === "read" && book.author ? [`by ${book.author}`] : []),
       story.mode === "read" ? `From the library of ${familyName}` : `Made by ${familyName}`,
     ];
-    const smallPrint = linesOf(notes.map((text, i) => ({ text, style: small, before: i ? 4 : 0 })));
+    const smallPrint = linesOf(
+      notes.map((text, i) => ({ text, style: small, before: i ? 4 : 0 })),
+      width,
+    );
     const lettering = heightOf(title) + 44 + heightOf(smallPrint);
-    const cover = picture(coverUrl);
-    let top = H * 0.6 + lettering / 2;
+    let top = sheet.h * 0.6 + lettering / 2;
     if (cover) {
-      const { w, h } = fit(cover, WIDTH, Math.max(120, Math.min(H * 0.55, AREA - lettering - 34)));
-      page.drawImage(cover, { x: (W - w) / 2, y: TOP - h, width: w, height: h });
-      top = TOP - h - 34;
+      // As big as the pages' pictures, unless the title needs some of its room.
+      const room = pictured ? Math.min(box.h, area - lettering - 26) : Math.min(sheet.h * 0.55, area - lettering - 34);
+      const { w, h } = fit(cover, width, Math.max(120, room));
+      page.drawImage(cover, { x: (sheet.w - w) / 2, y: sheet.top - h, width: w, height: h });
+      top = sheet.top - h - (pictured ? 26 : 34);
     }
-    const y = drawLines(page, title, top);
-    flourish(page, y - 20);
-    drawLines(page, smallPrint, y - 40);
+    const y = drawLines(page, title, x, width, top);
+    flourish(page, x + width / 2, y - 20);
+    drawLines(page, smallPrint, x, width, y - 40);
   }
 
-  const newPage = () => doc.addPage([W, H]);
-  if (pages.some((p) => picture(pictureOf(p.page)))) {
+  /** A picture across the top with its words beneath: the largest words that fit, then a smaller picture if it must be. */
+  const withWords = (page: PDFPage, art: PDFImage, p: (typeof pages)[number]): boolean => {
+    for (const size of SIZES) {
+      const lines = linesOf(blocksOf(p, size), column);
+      const text = heightOf(lines);
+      if (text > band + 0.5 && size !== SIZES.at(-1)) continue;
+      const room = Math.min(box.h, area - text - GAP);
+      if (room < box.h * 0.5) return false;
+      const { w, h } = fit(art, box.w, room);
+      page.drawImage(art, { x: (sheet.w - w) / 2, y: sheet.top - h, width: w, height: h });
+      drawLines(page, lines, EDGE, column, sheet.top - h - GAP);
+      return true;
+    }
+    return false;
+  };
+
+  if (pictured) {
     // A picture book, or a story of the family's photos: a page for each page, its picture with its words beneath.
     for (const p of pages) {
       const art = picture(pictureOf(p.page));
-      if (!art && !pageParagraphs(p.lines, language).length) continue;
+      const said = pageParagraphs(p.lines, language).length > 0;
+      if (!art && !said) continue;
       const page = newPage();
-      if (count > 1) pageNumber(page, fonts, p.page);
-      if (!art) {
-        pour(linesOf(blocksOf(p, 14)), newPage, { page, y: TOP }); // its picture isn't drawn yet: the words alone
-        continue;
-      }
-      let placed = false;
-      for (const size of [15, 14, 13, 12]) {
-        const lines = linesOf(blocksOf(p, size));
-        const text = lines.length ? heightOf(lines) + GAP : 0;
-        const room = Math.min(AREA * 0.64, AREA - text);
-        if (room < AREA * 0.4) continue;
-        const { w, h } = fit(art, WIDTH, room);
-        // The picture and its words sit together, a little above the middle of the page.
-        const top = TOP - Math.max(0, (AREA - h - text) * 0.3);
-        page.drawImage(art, { x: (W - w) / 2, y: top - h, width: w, height: h });
-        drawLines(page, lines, top - h - GAP);
-        placed = true;
-        break;
-      }
-      if (!placed) {
-        // Too many words to sit beneath the picture: it has this page to itself, and the words follow.
-        const { w, h } = fit(art, WIDTH, AREA);
-        page.drawImage(art, { x: (W - w) / 2, y: BOTTOM + (AREA - h) / 2, width: w, height: h });
-        pour(linesOf(blocksOf(p, 14)), newPage);
+      if (count > 1) pageNumber(page, sheet, fonts, p.page);
+      const words = () => linesOf(blocksOf(p, SIZES[0]), sheet.width);
+      if (!art) pour(sheet, words(), newPage, { page, y: sheet.top }); // its picture isn't drawn yet: the words alone
+      else if (!said || !withWords(page, art, p)) {
+        // No words, or too many to go with the picture: it has this page to itself, and the words follow.
+        const { w, h } = fit(art, column, area);
+        page.drawImage(art, { x: (sheet.w - w) / 2, y: sheet.top - h, width: w, height: h });
+        if (said) pour(sheet, words(), newPage);
       }
     }
   } else {
@@ -417,9 +461,10 @@ export async function storyPdf({ householdId, familyName, story, book, photos }:
     let at: { page: PDFPage; y: number } | undefined;
     for (const p of pages) {
       if (!pageParagraphs(p.lines, language).length) continue;
-      if (source === "book") at = pour(linesOf(blocksOf(p, 13.5, `${words.page} ${p.page}`)), newPage, at);
-      else if (story.mode === "create" && count > 1) at = pour(linesOf(blocksOf(p, 13.5, `${words.chapter} ${p.page}`)), newPage);
-      else at = pour(linesOf(blocksOf(p, 13.5, undefined, at ? 13.5 * 0.6 : 0)), newPage, at);
+      const lines = (heading?: string, lead = 0) => linesOf(blocksOf(p, ALONE, heading, lead), sheet.width);
+      if (source === "book") at = pour(sheet, lines(`${words.page} ${p.page}`), newPage, at);
+      else if (story.mode === "create" && count > 1) at = pour(sheet, lines(`${words.chapter} ${p.page}`), newPage);
+      else at = pour(sheet, lines(undefined, at ? ALONE * 0.6 : 0), newPage, at);
     }
   }
 
@@ -427,10 +472,11 @@ export async function storyPdf({ householdId, familyName, story, book, photos }:
   {
     const page = newPage();
     const big: Block = { text: printable(fonts.title, more ? words.more : words.theEnd), style: { font: fonts.title, size: 40, leading: 48, color: INK, center: true }, before: 0 };
-    const y = drawLines(page, [big], H * 0.62);
-    flourish(page, y - 20);
+    const y = drawLines(page, [big], sheet.x, sheet.width, sheet.h * 0.62);
+    flourish(page, sheet.w / 2, y - 20);
     const made = new Date(story.createdAt).toLocaleDateString("en-US", { month: "long", year: "numeric" });
-    drawLines(page, linesOf([{ text: `Made with Storyhollow · ${made}`, style: { font: fonts.words, size: 10.5, leading: 16, color: SOFT, center: true }, before: 0 }]), y - 40);
+    const colophon: Block = { text: `Made with Storyhollow · ${made}`, style: { font: fonts.words, size: 10.5, leading: 16, color: SOFT, center: true }, before: 0 };
+    drawLines(page, linesOf([colophon], sheet.width), sheet.x, sheet.width, y - 40);
   }
 
   return doc.save({ objectsPerTick: 25 });

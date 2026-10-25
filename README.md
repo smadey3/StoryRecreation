@@ -215,9 +215,11 @@ a brand-new tale for the very same pictures.
 - **⬇ Download everything:** one ZIP with every story as an MP3 (filed by book), the family recordings (by
   person), the book photos, and a *Read me* page to browse, play and read every story's words. It's the
   family's copy to keep, whatever happens to the app or the subscriptions.
-- **📄 A PDF book to share:** on a finished story's page, *Make a PDF book to share* makes it a book of its own,
-  six by nine inches: a cover, each page's picture with its words beneath (what the characters say in quotation
-  marks, as a printed book has it), and *The End*. On a phone that can share files, *📤 Share it* sends it by
+- **📄 A PDF book to share:** on a finished story's page, *Make a PDF book to share* makes it a book of its own: a
+  cover, each page's picture big across the top with its words just beneath (what the characters say in quotation
+  marks, as a printed book has it), and *The End*. A picture book's pages are made to fit its pictures, ten inches
+  across (the pictures are drawn wider than they're tall) and only as tall as the words need, so there's little
+  empty paper; a story without pictures is six by nine inches. On a phone that can share files, *📤 Share it* sends it by
   Messages, email or AirDrop; anywhere else it's saved with the downloads. A picture book has its own pictures, and
   a story of something you saw has your photos. A new story for a book you own has its words alone, page by page,
   to read along with your copy: that book's pictures belong to its publisher, so they stay in the library. A
@@ -337,9 +339,12 @@ humming placeholder voices.
 - **PDF books** are made on the server with pdf-lib (`src/lib/server/pdf.ts`), in the app's own type (IM Fell
   English for titles, Andika for the words, from the font packages the app already loads). Each picture is turned
   the right way up and made just big enough for the page, as a JPEG (with sharp), so a picture book stays a few
-  megabytes, small enough to send. A picture shares its page with its words when they fit beneath a picture at
-  least 40% of the page tall (a little smaller if need be); otherwise it has the page to itself and the words follow.
-  Words alone flow from page to page, and a paragraph never leaves one line alone at the top or foot of a page.
+  megabytes, small enough to send. A story with pictures gets pages fitted to them: 10 inches across for wide
+  pictures (7½ for tall ones), each picture the full width, and the page as tall as the picture plus the words of
+  all but the wordiest quarter of its pages, in 14-point type. A wordier page makes do with 13 or 12 point, then a
+  smaller picture, and only if that won't do does the picture get a page to itself with the words after. Words alone
+  (13½ point, six by nine inches) flow from page to page, and a paragraph never leaves one line alone at the top or
+  foot of a page.
 - **Sound effects** are placed by a small, separate Claude request that reads the finished script
   (`spotSoundEffects` in `src/lib/server/storyteller.ts`), made with ElevenLabs Sound Effects, and laid on
   the spoken word's timing about 8 dB under the narration (`src/lib/server/audio.ts`).

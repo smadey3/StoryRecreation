@@ -95,7 +95,7 @@ test("what the characters say is in quotation marks, in the paragraph that leads
 });
 
 test("quotation marks as each language has them, and nothing quoted twice", () => {
-  assert.deepEqual(pageParagraphs([{ speaker: "hero", text: "Tu as vu ça ? Tournons la page !" }], "fr"), ["« Tu as vu ça ? Tournons la page ! »"]);
+  assert.deepEqual(pageParagraphs([{ speaker: "hero", text: "Tu as vu ça ? Tournons la page !" }], "fr"), ["«\u00a0Tu as vu ça\u00a0? Tournons la page\u00a0!\u00a0»"]);
   assert.deepEqual(pageParagraphs([{ speaker: "hero", text: "¿Viste eso?" }], "es"), ["«¿Viste eso?»"]);
   assert.deepEqual(pageParagraphs([{ speaker: "hero", text: "“Already quoted,” said the book." }]), ["“Already quoted,” said the book."]);
 });
@@ -109,22 +109,28 @@ test("a story's PDF has its pictures and words, a new story for a real book its 
   assert.equal(pdfFileName('The Owl: "Who?" / Part 1'), "The Owl Who Part 1.pdf");
 });
 
-test("a picture book: the cover, a page for each page with its picture, and The End", async () => {
+test("a picture book: the cover, a page for each page with its picture, and The End, on pages made to fit them", async () => {
+  // Drawn 4:3, as the illustrator draws them.
   const art = {
-    cover: await picture("stories/s1/art/cover.png", 600, 600),
-    pages: [await picture("stories/s1/art/1.png", 600, 600), await picture("stories/s1/art/2.png", 800, 600), null],
+    cover: await picture("stories/s1/art/cover.png", 800, 600),
+    pages: [await picture("stories/s1/art/1.png", 800, 600), await picture("stories/s1/art/2.png", 800, 600), null],
   } as Story["art"];
   const bytes = await make(story({ art }));
   assert.equal(Buffer.from(bytes.slice(0, 5)).toString(), "%PDF-");
   assert.equal(await pagesIn(bytes), 5);
   assert.equal(imagesIn(bytes), 3, "the cover and the two pictures drawn");
+  // Ten inches across, each picture as wide as the page, and only as tall as the few words beneath need.
+  const { width, height } = (await PDFDocument.load(bytes)).getPage(1).getSize();
+  assert.equal(width, 720);
+  assert.ok(height < width && height > 504, `a page ${width} × ${height}`);
 });
 
-test("a new story for a real book leaves the book's own photos out", async () => {
+test("a new story for a real book leaves the book's own photos out, its words on six-by-nine pages", async () => {
   const photos = [{ id: "p1", pageNumber: 1, imageUrl: await picture("books/b1/page1.png", 600, 800) }];
   const bytes = await make(story({ settings: { source: "book" } as Story["settings"] }), photos, { ...book, kind: "picture_book" });
   assert.equal(imagesIn(bytes), 0);
   assert.ok((await pagesIn(bytes)) >= 3);
+  assert.deepEqual((await PDFDocument.load(bytes)).getPage(1).getSize(), { width: 432, height: 648 });
 });
 
 test("the family's own photos are in a story of something they saw, and a missing one leaves its page with its words", async () => {
