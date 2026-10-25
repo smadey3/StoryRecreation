@@ -228,7 +228,7 @@ export function Studio({
       <Brewing
         title={story.mode === "read" ? "Preparing the reading" : "The storyteller is at work"}
         progress={story.progress}
-        note={`${story.settings.review ? "" : `${story.mode === "read" ? "Once the words are ready" : "Once it's written"}, the voices record it, and the time left counts both. `}You can leave this page. The story keeps brewing and will be waiting on the shelf.`}
+        note={`${story.settings.review ? "" : `The voices start on each page as soon as it's ${story.mode === "read" ? "ready" : "written"}, and the time left counts both. `}You can leave this page. The story keeps brewing and will be waiting on the shelf.`}
       />
     );
   }

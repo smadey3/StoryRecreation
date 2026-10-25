@@ -34,6 +34,14 @@ export const config = {
   get voiceModel(): string {
     return process.env.VOICE_MODEL || "eleven_v4";
   },
+  /**
+   * How many recordings ElevenLabs makes for the stories at once, between them: one under the plan's limit (Creator
+   * allows 5, Pro 10), so a voice being designed or learned still gets a turn.
+   */
+  get voicesAtOnce(): number {
+    const n = Number(process.env.VOICES_AT_ONCE);
+    return Number.isInteger(n) && n >= 1 ? Math.min(n, 30) : 4;
+  },
   /** Google's picture model draws picture books (a Gemini API key from aistudio.google.com). */
   get illustratorKey(): string | undefined {
     return process.env.GEMINI_API_KEY?.trim() || process.env.GOOGLE_API_KEY?.trim() || undefined;

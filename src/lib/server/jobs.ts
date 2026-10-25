@@ -38,7 +38,7 @@ import type { ScriptLine, ScriptPage, SoundCue, Story, StoryScript, StorySetting
 // a parent can wander off to brush teeth, without losing anything. Progress
 // lives in the database; the page polls it.
 
-const globalForJobs = globalThis as unknown as { __storyhollowJobs?: Set<string> };
+const globalForJobs = globalThis as unknown as { __storyhollowJobs?: Set<string>; __storyhollowMaking?: Map<string, Promise<Clip>> };
 const running = (globalForJobs.__storyhollowJobs ??= new Set());
 
 export function isRunning(storyId: string): boolean {
@@ -178,6 +178,9 @@ async function writeStory(storyId: string): Promise<(() => void) | void> {
       previousStories: previousStoriesForBook(book.id, story.id),
       rememberedCharacters: listBookCharacters(book.id),
       voices,
+      // Nobody's reading it over first: each page is voiced as soon as it's written, while the storyteller writes the
+      // rest, and the recording that follows finds it made (or still being made, and waits for it).
+      ...(!s.review && config.elevenLabsKey ? { onPage: (page: ScriptPage, cast: Voices) => voiceEarly(storyDir(story.householdId, storyId), page, cast) } : {}),
     };
     const written =
       config.anthropicKey || !config.demoMode ? await writeScript(req, progress) : await writeDemoScript(req, progress);
@@ -210,6 +213,14 @@ async function writeStory(storyId: string): Promise<(() => void) | void> {
   // A picture book: the illustrator reads the story and plans what to draw, ready for the family to meet the characters.
   if (s.pictures && story.mode === "create") planPicturesAfterWriting(storyId);
   if (!s.review) return () => startRecording(storyId);
+}
+
+/** A page written while the rest of the story is still being written: voiced now, ready for the recording. */
+function voiceEarly(dir: string, page: ScriptPage, voices: Voices) {
+  void fs.promises
+    .mkdir(dir, { recursive: true })
+    .then(() => cachedPerformance(dir, pageClip(page.page), page.lines, voices))
+    .catch((err) => console.warn(`Page ${page.page} will be voiced with the rest:`, err));
 }
 
 /**
@@ -249,39 +260,48 @@ export function startRecording(storyId: string) {
 function recordingSeconds(script: StoryScript, s: StorySettings, dir: string): number | null {
   if (!config.elevenLabsKey && config.demoMode) return null;
   const toVoice = script.pages.filter((p) => !isRecorded(dir, pageClip(p.page), p.lines, script));
-  return voicingSeconds(toVoice.reduce((n, p) => n + p.lines.reduce((m, l) => m + stripTags(l.text).length, 0), 0), {
-    welcome: s.intro && !fs.existsSync(path.join(dir, "intro-a.json")),
-    soundscape: Boolean(s.ambience && script.ambience && !fs.existsSync(ambienceFile(dir, script.ambience))),
-    effects: !s.effects ? 0 : script.effects ? script.effects.filter((cue) => !fs.existsSync(effectFile(dir, cue))).length : null,
-  });
-}
-
-/** The same, for a story not written yet: as long as stories like it usually run. */
-function unwrittenRecordingSeconds(story: Story): number | null {
-  if (!config.elevenLabsKey && config.demoMode) return null;
-  const s = story.settings;
-  const pages = s.source === "book" || s.source === "book_read" ? listPageRows(story.bookId).length : 0;
-  // A book read aloud from its photos: about 200 letters a page. Anything else, by the length chosen.
-  const chars =
-    s.source === "book_read"
-      ? pages * 200
-      : s.source === "text"
-        ? (s.text ?? "").length
-        : (s.source === "book" ? estimateMinutes(s.length, Math.max(1, pages)) : LENGTHS[s.length].minutes) * WORDS_PER_MINUTE * 6;
-  return voicingSeconds(chars, { welcome: s.intro, soundscape: s.ambience, effects: s.effects ? null : 0 });
+  return voicingSeconds(
+    toVoice.map((p) => p.lines.reduce((n, l) => n + stripTags(l.text).length, 0)),
+    {
+      welcome: s.intro && !fs.existsSync(path.join(dir, "intro-a.json")),
+      soundscape: Boolean(s.ambience && script.ambience && !fs.existsSync(ambienceFile(dir, script.ambience))),
+      effects: !s.effects ? 0 : script.effects ? script.effects.filter((cue) => !fs.existsSync(effectFile(dir, cue))).length : null,
+    },
+  );
 }
 
 /**
- * The rule of thumb for recording `chars` letters of words: the voices are made two pages at a time, a few times
- * faster than they're heard, with a little for the welcome, a soundscape and binding it all together. `effects` is how
- * many sound effects to make, or null when they're still to be chosen (a quick word with the storyteller, then a few
- * seconds each). Twice the first guesses, which families found far too short; the waits also learn from every story
- * since (timing.ts).
+ * The same, for a story not written yet, as long as stories like it usually run. Its pages are voiced as they're
+ * written, so what's left once the writing's done is about the last page, with the welcome and sounds alongside it,
+ * and the binding.
  */
-function voicingSeconds(chars: number, extras: { welcome: boolean; soundscape: boolean; effects: number | null }): number {
-  const listening = chars / 15;
-  const effects = extras.effects === null ? 50 : 8 * extras.effects;
-  return Math.round(20 + listening * 0.3 + (extras.welcome ? 12 : 0) + (extras.soundscape ? 16 : 0) + effects);
+function unwrittenRecordingSeconds(story: Story): number | null {
+  if (!config.elevenLabsKey && config.demoMode) return null;
+  const s = story.settings;
+  const photos = s.source === "book" || s.source === "book_read" || s.source === "wild" ? listPageRows(story.bookId).length : 0;
+  // A book read aloud from its photos: about 200 letters a page. Anything else, by the length chosen.
+  const chars =
+    s.source === "book_read"
+      ? photos * 200
+      : s.source === "text"
+        ? (s.text ?? "").length
+        : (s.source === "book" ? estimateMinutes(s.length, Math.max(1, photos)) : LENGTHS[s.length].minutes) * WORDS_PER_MINUTE * 6;
+  const pages = s.source === "book_read" ? photos : s.source === "text" ? Math.ceil(chars / 900) : pageCountFor(s.source, s.length, photos);
+  return voicingSeconds([chars / Math.max(1, pages)], { welcome: s.intro, soundscape: s.ambience, effects: s.effects ? null : 0 });
+}
+
+/**
+ * The rule of thumb for voicing pages of these many letters: each takes about 0.6 seconds for every second it's heard,
+ * several at a time (VOICES_AT_ONCE), so the longest page or all of them shared out, whichever is longer. The welcome,
+ * a soundscape and the sound effects are made alongside (`effects` is how many to make, or null when they're still to
+ * be chosen, a quick word with the storyteller), and then it's all bound together. The waits also learn from every
+ * story (timing.ts).
+ */
+function voicingSeconds(pages: number[], extras: { welcome: boolean; soundscape: boolean; effects: number | null }): number {
+  const heard = pages.map((chars) => chars / 15);
+  const voices = Math.max(Math.max(0, ...heard) * 0.6, (heard.reduce((a, b) => a + b, 0) * 0.6) / config.voicesAtOnce);
+  const effects = extras.effects === null ? 25 : 3 * extras.effects;
+  return Math.round(20 + voices + (extras.welcome ? 4 : 0) + (extras.soundscape ? 6 : 0) + effects);
 }
 
 function introLines(
@@ -310,6 +330,9 @@ function hashOf(value: unknown): string {
   return createHash("sha1").update(JSON.stringify(value)).digest("hex").slice(0, 16);
 }
 
+/** Who has which voice, and the language: all a set of lines needs to be performed. */
+type Voices = Pick<StoryScript, "cast" | "language">;
+
 interface CachedClip {
   hash: string;
   words: Clip["words"];
@@ -318,7 +341,7 @@ interface CachedClip {
 const pageClip = (page: number) => `page-${String(page).padStart(3, "0")}`;
 
 /** What a set of lines sounds like: the words, who says them, the voice model and the language. Recorded again only when it changes. */
-function performanceHash(lines: ScriptLine[], script: StoryScript): string {
+function performanceHash(lines: ScriptLine[], script: Voices): string {
   const voices = Object.fromEntries(script.cast.map((c) => [c.id, c.voiceId]));
   const language = languageOf(script.language);
   return hashOf({
@@ -332,7 +355,7 @@ function performanceHash(lines: ScriptLine[], script: StoryScript): string {
 }
 
 /** Whether a set of lines is recorded already, unchanged. */
-function isRecorded(dir: string, name: string, lines: ScriptLine[], script: StoryScript): boolean {
+function isRecorded(dir: string, name: string, lines: ScriptLine[], script: Voices): boolean {
   try {
     return (JSON.parse(fs.readFileSync(path.join(dir, `${name}.json`), "utf8")) as CachedClip).hash === performanceHash(lines, script);
   } catch {
@@ -340,8 +363,14 @@ function isRecorded(dir: string, name: string, lines: ScriptLine[], script: Stor
   }
 }
 
+/**
+ * Recordings being made right now, by where they'll be kept and what they say. One asked for again meanwhile (a page
+ * voiced while the story was still being written, then by the recording) is waited for rather than made twice.
+ */
+const making = (globalForJobs.__storyhollowMaking ??= new Map());
+
 /** Record a set of lines, reusing the saved audio if nothing changed. */
-async function cachedPerformance(dir: string, name: string, lines: ScriptLine[], script: StoryScript): Promise<Clip> {
+async function cachedPerformance(dir: string, name: string, lines: ScriptLine[], script: Voices): Promise<Clip> {
   const hash = performanceHash(lines, script);
   const pcmPath = path.join(dir, `${name}.pcm`);
   const metaPath = path.join(dir, `${name}.json`);
@@ -351,10 +380,23 @@ async function cachedPerformance(dir: string, name: string, lines: ScriptLine[],
   } catch {
     // not recorded yet
   }
-  const clip = await performLines(lines, script.cast, languageOf(script.language));
-  await fs.promises.writeFile(pcmPath, floatToPcm16(clip.samples));
-  await fs.promises.writeFile(metaPath, JSON.stringify({ hash, words: clip.words } satisfies CachedClip));
-  return clip;
+  const key = `${pcmPath}#${hash}`;
+  const already = making.get(key);
+  // (If that one didn't come, it's made again here.)
+  const madeAlready = already && (await already.catch(() => null));
+  if (madeAlready) return madeAlready;
+  const work = (async () => {
+    const clip = await performLines(lines, script.cast, languageOf(script.language));
+    await fs.promises.writeFile(pcmPath, floatToPcm16(clip.samples));
+    await fs.promises.writeFile(metaPath, JSON.stringify({ hash, words: clip.words } satisfies CachedClip));
+    return clip;
+  })();
+  making.set(key, work);
+  try {
+    return await work;
+  } finally {
+    if (making.get(key) === work) making.delete(key);
+  }
 }
 
 async function recordStory(storyId: string) {
@@ -364,53 +406,59 @@ async function recordStory(storyId: string) {
   const dir = storyDir(story.householdId, storyId);
   await fs.promises.mkdir(dir, { recursive: true });
 
-  const steps = script.pages.length + (settings.intro ? 1 : 0) + (settings.ambience ? 1 : 0) + (settings.effects ? 1 : 0) + 1;
+  // Everything is asked for at once, and ElevenLabs makes a few at a time (performer.ts keeps to the account's limit):
+  // the welcome, every page, the soundscape, and each page's sound effects once its words are timed. Each piece
+  // counts as it's done; then it's all bound together.
+  const soundscape = Boolean(settings.ambience && script.ambience);
+  const total = script.pages.length + (settings.intro ? 1 : 0) + (soundscape ? 1 : 0) + (settings.effects ? 1 : 0) + 1;
   let done = 0;
   const { startedAt, seconds } = story.progress ?? {};
-  const tick = (step: string) => updateStory(storyId, { progress: { step, done: done++, total: steps, startedAt, seconds } });
+  const report = (step: string) => updateStory(storyId, { progress: { step, done, total, startedAt, seconds } });
+  const counted = async <T>(work: Promise<T>): Promise<T> => {
+    const value = await work;
+    done++;
+    report("Recording the voices");
+    return value;
+  };
+  report("Recording the voices");
 
-  let intro: { before: Clip; after: Clip } | null = null;
-  if (settings.intro) {
-    tick("Recording the welcome");
-    const bookTitle = getBook(story.householdId, story.bookId)?.title ?? "";
-    const lines = introLines(script, { chime: settings.chime.enabled, mode: story.mode, source: settings.source, bookTitle });
-    intro = {
-      before: await cachedPerformance(dir, "intro-a", lines.before, script),
-      after: await cachedPerformance(dir, "intro-b", lines.after, script),
-    };
-  }
+  const bookTitle = getBook(story.householdId, story.bookId)?.title ?? "";
+  const welcome = settings.intro
+    ? counted(
+        (async () => {
+          const lines = introLines(script, { chime: settings.chime.enabled, mode: story.mode, source: settings.source, bookTitle });
+          const [before, after] = await Promise.all([cachedPerformance(dir, "intro-a", lines.before, script), cachedPerformance(dir, "intro-b", lines.after, script)]);
+          return { before, after };
+        })(),
+      )
+    : null;
+  const ambience = soundscape ? counted(cachedAmbience(dir, script.ambience)) : null;
+  // The sound effects are chosen (the first time) while the voices record. A story is still lovely without them, so
+  // a hiccup with them never stops it.
+  const cues = settings.effects
+    ? chooseEffects(storyId, script).catch((err) => {
+        console.warn("Sound effects unavailable:", err);
+        return [];
+      })
+    : null;
 
-  // Two pages at a time keeps things quick without tripping rate limits.
   const pages: { page: number; clip: Clip }[] = new Array(script.pages.length);
+  const pageSounds: Promise<PlacedEffect[]>[] = new Array(script.pages.length);
   let next = 0;
   const worker = async () => {
     while (next < script.pages.length) {
       const i = next++;
       const p = script.pages[i];
-      tick(`Recording page ${p.page} of ${script.pages.length}`);
-      pages[i] = { page: p.page, clip: await cachedPerformance(dir, pageClip(p.page), p.lines, script) };
+      const clip = await counted(cachedPerformance(dir, pageClip(p.page), p.lines, script));
+      pages[i] = { page: p.page, clip };
+      if (cues) pageSounds[i] = pageEffects(dir, p, clip, cues);
     }
   };
-  await Promise.all([worker(), worker()]);
+  const [intro, ambienceSound] = await Promise.all([welcome, ambience, Promise.all(Array.from({ length: config.voicesAtOnce }, worker))]);
+  const effects = cues ? (await counted(Promise.all(pageSounds))).flatMap((e) => e ?? []) : [];
 
-  let ambience: Float32Array | null = null;
-  if (settings.ambience && script.ambience) {
-    tick("Painting the soundscape");
-    ambience = await cachedAmbience(dir, script.ambience);
-  }
-
-  let effects: PlacedEffect[] = [];
-  if (settings.effects) {
-    tick("Adding the sound effects");
-    // A story is still lovely without its sound effects, so a hiccup here never stops it.
-    effects = await recordEffects(storyId, dir, script, pages).catch((err) => {
-      console.warn("Sound effects unavailable:", err);
-      return [];
-    });
-  }
-
-  tick("Binding the story together");
-  await finishMix(storyId, dir, { pages, intro, ambience, effects });
+  report("Binding the story together");
+  await finishMix(storyId, dir, { pages, intro, ambience: ambienceSound, effects });
 
   if (story.mode === "create") {
     rememberCharacters(
@@ -467,36 +515,45 @@ const effectFile = (dir: string, cue: SoundCue) =>
   path.join(dir, `sfx-${hashOf({ sound: cue.sound, seconds: cue.seconds, demo: !config.elevenLabsKey })}.pcm`);
 
 /** Choose the sound effects (once per script), make any not yet made, and place them. */
-async function recordEffects(storyId: string, dir: string, script: StoryScript, pages: { page: number; clip: Clip }[]): Promise<PlacedEffect[]> {
-  if (!script.effects) {
-    if (config.anthropicKey || !config.demoMode) {
-      const { cues, cost } = await spotSoundEffects(script);
-      script.effects = cues;
-      const householdId = getStoryById(storyId)?.householdId;
-      if (householdId && cost > 0) {
-        recordSpend(householdId, { storyId, service: "storyteller", kind: "sounds", what: `Chose the sound effects for “${script.title}”`, spent: cost });
+/** The story's sound effects: chosen by the storyteller the first time (and kept with the script), then the same each time. */
+async function chooseEffects(storyId: string, script: StoryScript): Promise<SoundCue[]> {
+  if (script.effects) return script.effects;
+  if (config.anthropicKey || !config.demoMode) {
+    const { cues, cost } = await spotSoundEffects(script);
+    script.effects = cues;
+    const householdId = getStoryById(storyId)?.householdId;
+    if (householdId && cost > 0) {
+      recordSpend(householdId, { storyId, service: "storyteller", kind: "sounds", what: `Chose the sound effects for “${script.title}”`, spent: cost });
+    }
+  } else {
+    script.effects = demoSoundCues(script);
+  }
+  updateStory(storyId, { script });
+  return script.effects;
+}
+
+/** A page's sound effects, made (or found made already) once its words are timed, each placed on its word. */
+async function pageEffects(dir: string, page: ScriptPage, clip: Clip, cues: Promise<SoundCue[]>): Promise<PlacedEffect[]> {
+  try {
+    const placed: PlacedEffect[] = [];
+    for (const cue of (await cues).filter((c) => c.page === page.page)) {
+      const at = cueTime(page, clip, cue);
+      if (at === null) continue;
+      const file = effectFile(dir, cue);
+      let samples: Float32Array;
+      try {
+        samples = pcm16ToFloat(await fs.promises.readFile(file));
+      } catch {
+        samples = await performSoundEffect(cue.sound, cue.seconds);
+        await fs.promises.writeFile(file, floatToPcm16(samples));
       }
-    } else {
-      script.effects = demoSoundCues(script);
+      placed.push({ page: cue.page, at, samples });
     }
-    updateStory(storyId, { script });
+    return placed;
+  } catch (err) {
+    console.warn(`Sound effects for page ${page.page} unavailable:`, err);
+    return [];
   }
-  const placed: PlacedEffect[] = [];
-  for (const cue of script.effects) {
-    const i = script.pages.findIndex((p) => p.page === cue.page);
-    const at = i >= 0 ? cueTime(script.pages[i], pages[i].clip, cue) : null;
-    if (at === null) continue;
-    const file = effectFile(dir, cue);
-    let samples: Float32Array;
-    try {
-      samples = pcm16ToFloat(await fs.promises.readFile(file));
-    } catch {
-      samples = await performSoundEffect(cue.sound, cue.seconds);
-      await fs.promises.writeFile(file, floatToPcm16(samples));
-    }
-    placed.push({ page: cue.page, at, samples });
-  }
-  return placed;
 }
 
 async function finishMix(

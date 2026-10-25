@@ -2,11 +2,12 @@ import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { config } from "./config";
 import { claudeCost } from "./prices";
+import { JsonStream } from "./json-stream";
 import { describeVoiceForCasting } from "./voices";
 import { SCENE_EFFECTS, sceneEffect } from "@/lib/shared/art";
 import { AGES, BOOK_KINDS, LENGTHS, MOODS, WORDS_PER_MINUTE, wordsPerPage } from "@/lib/shared/options";
 import { LANGUAGES, languageOf } from "@/lib/shared/languages";
-import type { BookKind, SoundCue, StoryScript, StorySettings, VoiceOption } from "@/lib/shared/types";
+import type { BookKind, CastMember, ScriptPage, SoundCue, StoryLanguage, StoryScript, StorySettings, VoiceOption } from "@/lib/shared/types";
 import type { RememberedCharacter } from "./db";
 
 // --------------------------------------------------------------------------
@@ -71,30 +72,30 @@ Books in other languages
 // ----------------------------------------------------------------- schema
 
 const LineSchema = z.object({ speaker: z.string(), text: z.string() });
+const CastSchema = z.array(
+  z.object({
+    id: z.string(),
+    name: z.string(),
+    description: z.string(),
+    voice_brief: z.string(),
+    voice_id: z.string(),
+  }),
+);
+const PageSchema = z.object({
+  page: z.number().int(),
+  photo: z.number().int(),
+  picture: z.string(),
+  lines: z.array(LineSchema),
+  effect: z.string().optional(),
+  translation: z.string().optional(),
+});
 const ScriptSchema = z.object({
   title: z.string(),
   synopsis: z.string(),
   ambience: z.string(),
   language: z.string().optional(),
-  cast: z.array(
-    z.object({
-      id: z.string(),
-      name: z.string(),
-      description: z.string(),
-      voice_brief: z.string(),
-      voice_id: z.string(),
-    }),
-  ),
-  pages: z.array(
-    z.object({
-      page: z.number().int(),
-      photo: z.number().int(),
-      picture: z.string(),
-      lines: z.array(LineSchema),
-      effect: z.string().optional(),
-      translation: z.string().optional(),
-    }),
-  ),
+  cast: CastSchema,
+  pages: z.array(PageSchema),
 });
 type RawScript = z.infer<typeof ScriptSchema>;
 
@@ -176,6 +177,8 @@ export interface StoryRequest {
   previousStories: { title: string; synopsis: string }[];
   rememberedCharacters: RememberedCharacter[];
   voices: VoiceOption[];
+  /** Each page as soon as it's written (not the last), to voice while the storyteller writes the rest. */
+  onPage?: WrittenPage;
 }
 
 const PAGE_ORDER = `Page order: the photos are numbered in the order the family took them, which is not always the book's order (people often photograph a book back to front). If the pages show printed page numbers, or the pictures or text clearly run in another order, return the pages in the book's true reading order. For every page, set "photo" to the number of the photo that belongs on it; when the order is already right, "photo" simply equals "page".`;
@@ -332,10 +335,12 @@ export async function writeScript(req: StoryRequest, onProgress: WriteProgress):
     messages: [{ role: "user", content: buildContent(req) }],
   });
 
-  // Count pages as they stream in so the family can watch the story grow.
+  // Count pages as they stream in so the family can watch the story grow (and hand each over, when asked).
   let text = "";
   let pagesSeen = 0;
+  const watch = req.onPage ? watchPages(req, req.onPage) : null;
   stream.on("text", (delta) => {
+    watch?.push(delta);
     text += delta;
     const seen = (text.match(/"picture"\s*:/g) ?? []).length;
     if (seen !== pagesSeen) {
@@ -390,10 +395,35 @@ export function photoOrderFrom(raw: RawScript, req: StoryRequest): number[] | nu
 
 /** Make the script safe to perform: valid speakers, valid voices, pages in order. */
 export function normalizeScript(raw: RawScript, req: StoryRequest): StoryScript {
+  const cast = castOf(raw.cast, req);
+  // A new story is told in the language the family chose; a book is read in the language it's written in.
+  const language = languageOf(req.mode === "read" ? raw.language : req.settings.language);
+  let pages = raw.pages.map((p, i) => pageOf(p, i, cast, language, req));
+  // Pages tied to real pictures must line up one-to-one with them.
+  if (!req.text) {
+    pages = pages.slice(0, req.pageCount);
+    while (pages.length < req.pageCount) pages.push({ page: pages.length + 1, picture: "", lines: [] });
+  }
+
+  return {
+    title: raw.title.trim() || req.bookTitle,
+    synopsis: raw.synopsis.trim(),
+    ambience: raw.ambience.trim(),
+    cast: cast.performing,
+    pages,
+    ...(language !== "en" ? { language } : {}),
+  };
+}
+
+/**
+ * The cast as it will perform: valid ids and voices, the chosen storyteller, remembered characters on their voices
+ * (`everyone`, to tell who says each line), and just the storyteller when one voice reads it all (`performing`).
+ */
+function castOf(raw: RawScript["cast"], req: StoryRequest): { everyone: CastMember[]; performing: CastMember[] } {
   const voiceIds = new Set(req.voices.map((v) => v.voiceId));
   const fallbackVoice = req.settings.narratorVoiceId ?? req.voices[0]?.voiceId ?? "";
 
-  const cast = raw.cast.map((c) => ({
+  const cast = raw.map((c) => ({
     id: slug(c.id) || "narrator",
     name: c.name.trim() || "Narrator",
     description: c.description.trim(),
@@ -411,37 +441,71 @@ export function normalizeScript(raw: RawScript, req: StoryRequest): StoryScript 
     const remembered = req.rememberedCharacters.find((r) => r.name.toLowerCase() === c.name.toLowerCase());
     if (remembered && voiceIds.has(remembered.voiceId) && c.id !== "narrator") c.voiceId = remembered.voiceId;
   }
+  return { everyone: cast, performing: req.settings.fullCast ? cast : [narrator] };
+}
 
-  const castIds = new Set(cast.map((c) => c.id));
-  // A new story is told in the language the family chose; a book is read in the language it's written in.
-  const language = languageOf(req.mode === "read" ? raw.language : req.settings.language);
-  let pages: StoryScript["pages"] = raw.pages.map((p, i) => {
-    const effect = sceneEffect(p.effect);
-    const translation = p.translation?.trim().slice(0, 4000);
-    return {
-      page: i + 1,
-      picture: p.picture.trim(),
-      lines: p.lines
-        .map((l) => ({ speaker: castIds.has(slug(l.speaker)) ? slug(l.speaker) : "narrator", text: l.text.trim() }))
-        .filter((l) => l.text.length > 0),
-      ...(effect !== "none" ? { effect } : {}),
-      ...(translation && language !== "en" ? { translation } : {}),
-    };
-  });
-  // Pages tied to real pictures must line up one-to-one with them.
-  if (!req.text) {
-    pages = pages.slice(0, req.pageCount);
-    while (pages.length < req.pageCount) pages.push({ page: pages.length + 1, picture: "", lines: [] });
-  }
-
+/** The `i`th page (from 0) as it will be performed: every line said by someone in the cast, and none of them empty. */
+function pageOf(p: RawScript["pages"][number], i: number, cast: { everyone: CastMember[] }, language: StoryLanguage, req: StoryRequest): ScriptPage {
+  const castIds = new Set(cast.everyone.map((c) => c.id));
+  const effect = sceneEffect(p.effect);
+  const translation = p.translation?.trim().slice(0, 4000);
+  const lines = p.lines
+    .map((l) => ({ speaker: castIds.has(slug(l.speaker)) ? slug(l.speaker) : "narrator", text: l.text.trim() }))
+    .filter((l) => l.text.length > 0);
   return {
-    title: raw.title.trim() || req.bookTitle,
-    synopsis: raw.synopsis.trim(),
-    ambience: raw.ambience.trim(),
-    cast: req.settings.fullCast ? cast : [narrator],
-    pages: req.settings.fullCast ? pages : pages.map((p) => ({ ...p, lines: p.lines.map((l) => ({ ...l, speaker: "narrator" })) })),
-    ...(language !== "en" ? { language } : {}),
+    page: i + 1,
+    picture: p.picture.trim(),
+    lines: req.settings.fullCast ? lines : lines.map((l) => ({ ...l, speaker: "narrator" })),
+    ...(effect !== "none" ? { effect } : {}),
+    ...(translation && language !== "en" ? { translation } : {}),
   };
+}
+
+/** A page handed over while the rest of the story is still being written, with what it takes to voice it. */
+export type WrittenPage = (page: ScriptPage, voices: Pick<StoryScript, "cast" | "language">) => void;
+
+/**
+ * Watches the script stream in and hands over each page the moment it's written, exactly as it will stand in the
+ * finished script, so the voices can start on it while the rest is being written. A page is handed over once the next
+ * has begun, so never the last one ("The end" is added to it once the whole story is in), and never one past the pages
+ * the book has. Anything unexpected stops the handing over, and the story is voiced after the writing as before.
+ */
+function watchPages(req: StoryRequest, onPage: WrittenPage): JsonStream {
+  let cast: ReturnType<typeof castOf> | null = null;
+  // A book read aloud says its language before its cast; a new story's is the family's choice.
+  let language: StoryLanguage | null = req.mode === "read" ? null : languageOf(req.settings.language);
+  const written: string[] = [];
+  let begun = 0;
+  let handed = 0;
+  let stopped = false;
+  const last = req.text ? Infinity : req.pageCount - 1;
+
+  const handOver = () => {
+    if (!cast || !language || stopped) return;
+    while (handed < written.length && handed + 1 < begun && handed < last) {
+      const i = handed++;
+      const page = pageOf(PageSchema.parse(JSON.parse(written[i])), i, cast, language, req);
+      if (page.lines.length) onPage(page, { cast: cast.performing, ...(language !== "en" ? { language } : {}) });
+    }
+  };
+  const safely = (fn: () => void) => {
+    try {
+      fn();
+      handOver();
+    } catch (err) {
+      stopped = true;
+      console.warn("Pages will be voiced once the story is written:", err);
+    }
+  };
+  return new JsonStream({
+    field: (key, json) =>
+      safely(() => {
+        if (key === "language") language = languageOf(JSON.parse(json));
+        if (key === "cast") cast = castOf(CastSchema.parse(JSON.parse(json)), req);
+      }),
+    begin: (key) => safely(() => key === "pages" && begun++),
+    item: (key, _i, json) => safely(() => key === "pages" && written.push(json)),
+  });
 }
 
 // ------------------------------------------------------------ sound effects

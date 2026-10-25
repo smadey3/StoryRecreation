@@ -18,6 +18,37 @@ function useDemo(): boolean {
   return !config.elevenLabsKey && config.demoMode;
 }
 
+/** Work done a few at a time, in the order it was asked for. */
+class Turns {
+  private busy = 0;
+  private waiting: (() => void)[] = [];
+  constructor(private size: () => number) {}
+
+  async run<T>(fn: () => Promise<T>): Promise<T> {
+    if (this.busy < this.size()) this.busy++;
+    else await new Promise<void>((go) => this.waiting.push(go));
+    try {
+      return await fn();
+    } finally {
+      // The turn passes straight to whoever's next.
+      const next = this.waiting.shift();
+      if (next) next();
+      else this.busy--;
+    }
+  }
+}
+
+/**
+ * ElevenLabs makes only so many recordings at once for an account, whoever asks (5 on Creator, 10 on Pro). The stories
+ * keep to VOICES_AT_ONCE between them, every page, welcome and sound of every story taking its turn, which leaves room
+ * for a voice being designed or learned. Kept on globalThis so every part of the app shares the one count.
+ */
+const globalForVoices = globalThis as unknown as { __storyhollowVoiceTurns?: Turns };
+const voiceTurns = (globalForVoices.__storyhollowVoiceTurns ??= new Turns(() => config.voicesAtOnce));
+
+/** A recording for a story: made when its turn comes, and asked for again if ElevenLabs is busy (the turn is given up while waiting). */
+const voiced = <T>(fn: () => Promise<T>) => withRetry(() => voiceTurns.run(fn));
+
 /** Perform lines with the cast's voices, in the story's language (said to ElevenLabs, so every word is spoken as it should be). */
 export async function performLines(lines: ScriptLine[], cast: CastMember[], language: StoryLanguage = "en"): Promise<Clip> {
   const voiceOf = (speaker: string) =>
@@ -39,7 +70,7 @@ export async function performLines(lines: ScriptLine[], cast: CastMember[], lang
 async function performChunk(lines: ScriptLine[], voiceOf: (s: string) => string | undefined, languageCode?: string): Promise<Clip> {
   const inputs = lines.map((l) => ({ text: l.text, voiceId: voiceOf(l.speaker)! }));
   try {
-    const res = await withRetry(() =>
+    const res = await voiced(() =>
       eleven().textToDialogue.convertWithTimestamps({
         inputs,
         modelId: config.voiceModel,
@@ -67,7 +98,7 @@ async function performLineByLine(lines: ScriptLine[], voiceOf: (s: string) => st
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     try {
-      const res = await withRetry(() =>
+      const res = await voiced(() =>
         eleven().textToSpeech.convertWithTimestamps(voiceOf(line.speaker)!, {
           text: line.text,
           modelId: config.voiceModel,
@@ -135,16 +166,19 @@ export async function performAmbience(description: string): Promise<Float32Array
   if (!description.trim()) return null;
   if (useDemo()) return demoAmbience();
   try {
-    const stream = await withRetry(() =>
-      eleven().textToSoundEffects.convert({
-        text: `${description}. Gentle, quiet, calm, continuous ambience for a bedtime story, no music, no voices, no sudden sounds.`,
-        loop: true,
-        durationSeconds: 20,
-        promptInfluence: 0.45,
-        outputFormat: OUTPUT,
-      }),
+    // The sound is read in full within its turn, so the turn lasts as long as ElevenLabs is busy with it.
+    const audio = await voiced(async () =>
+      readAll(
+        await eleven().textToSoundEffects.convert({
+          text: `${description}. Gentle, quiet, calm, continuous ambience for a bedtime story, no music, no voices, no sudden sounds.`,
+          loop: true,
+          durationSeconds: 20,
+          promptInfluence: 0.45,
+          outputFormat: OUTPUT,
+        }),
+      ),
     );
-    return pcm16ToFloat(await readAll(stream));
+    return pcm16ToFloat(audio);
   } catch (err) {
     console.warn("Ambience unavailable:", err);
     return null; // a story without ambience is still a lovely story
@@ -155,15 +189,17 @@ export async function performAmbience(description: string): Promise<Float32Array
 export async function performSoundEffect(description: string, seconds: number): Promise<Float32Array> {
   if (useDemo()) return demoSoundEffect(seconds);
   try {
-    const stream = await withRetry(() =>
-      eleven().textToSoundEffects.convert({
-        text: `${description}. A single, gentle, clean sound effect for a children's bedtime story. No music, no voices.`,
-        durationSeconds: seconds,
-        promptInfluence: 0.6,
-        outputFormat: OUTPUT,
-      }),
+    const audio = await voiced(async () =>
+      readAll(
+        await eleven().textToSoundEffects.convert({
+          text: `${description}. A single, gentle, clean sound effect for a children's bedtime story. No music, no voices.`,
+          durationSeconds: seconds,
+          promptInfluence: 0.6,
+          outputFormat: OUTPUT,
+        }),
+      ),
     );
-    return pcm16ToFloat(await readAll(stream));
+    return pcm16ToFloat(audio);
   } catch (err) {
     throw explain(err);
   }

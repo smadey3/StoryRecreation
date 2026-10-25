@@ -43,6 +43,15 @@ let soundJson = "";
 const PERSONA_VOICE = "JBFqnCBsd6RMkjVDRZzb";
 const OWL_VOICE = "pqHfZKP75CvOlQylNhV4";
 
+// A storyteller that writes slowly (milliseconds between pieces), and voices that take a while, to watch what happens
+// while each is at work: when the script finished, and every recording asked for, when, and how many at once.
+let writingPause = 0;
+let writingEndedAt = 0;
+let voicingPause = 0;
+let voicingNow = 0;
+let mostVoicingAtOnce = 0;
+const voiced: { text: string; at: number }[] = [];
+
 function sse(res: http.ServerResponse, text: string) {
   res.writeHead(200, { "content-type": "text/event-stream" });
   const send = (event: string, data: unknown) => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
@@ -51,13 +60,21 @@ function sse(res: http.ServerResponse, text: string) {
     message: { id: "msg_1", type: "message", role: "assistant", model: "claude-opus-5-5", content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 10, output_tokens: 1 } },
   });
   send("content_block_start", { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } });
-  for (let i = 0; i < text.length; i += 40) {
-    send("content_block_delta", { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: text.slice(i, i + 40) } });
-  }
-  send("content_block_stop", { type: "content_block_stop", index: 0 });
-  send("message_delta", { type: "message_delta", delta: { stop_reason: "end_turn", stop_sequence: null }, usage: { output_tokens: 200 } });
-  send("message_stop", { type: "message_stop" });
-  res.end();
+  const pieces = Array.from({ length: Math.ceil(text.length / 40) }, (_, i) => text.slice(i * 40, i * 40 + 40));
+  const finish = () => {
+    send("content_block_stop", { type: "content_block_stop", index: 0 });
+    send("message_delta", { type: "message_delta", delta: { stop_reason: "end_turn", stop_sequence: null }, usage: { output_tokens: 200 } });
+    send("message_stop", { type: "message_stop" });
+    writingEndedAt = Date.now();
+    res.end();
+  };
+  const next = (i: number) => {
+    if (i === pieces.length) return finish();
+    send("content_block_delta", { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: pieces[i] } });
+    if (writingPause) setTimeout(() => next(i + 1), writingPause);
+    else next(i + 1);
+  };
+  next(0);
 }
 
 function pcmBase64(seconds: number): string {
@@ -100,6 +117,8 @@ before(async () => {
       if (req.url!.startsWith("/v1/text-to-dialogue/with-timestamps")) {
         const inputs = (body as { inputs: { text: string; voice_id: string }[] }).inputs;
         const text = inputs.map((i) => i.text).join(" ");
+        voiced.push({ text, at: Date.now() });
+        mostVoicingAtOnce = Math.max(mostVoicingAtOnce, ++voicingNow);
         const chars = [...text];
         let at = 0;
         const segments = inputs.map((inp, idx) => {
@@ -114,8 +133,10 @@ before(async () => {
           at += inp.text.length + 1;
           return seg;
         });
-        res.writeHead(200, { "content-type": "application/json" });
-        return res.end(
+        const reply = () => {
+          voicingNow--;
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(
           JSON.stringify({
             audio_base64: pcmBase64(chars.length * 0.05),
             alignment: {
@@ -125,7 +146,9 @@ before(async () => {
             },
             voice_segments: segments,
           }),
-        );
+          );
+        };
+        return voicingPause ? void setTimeout(reply, voicingPause) : reply();
       }
       if (req.url!.startsWith("/v1/text-to-voice/design")) {
         // ElevenLabs turns some descriptions down; the reason rides in detail.message
@@ -848,13 +871,53 @@ test("recording counts only what isn't made yet: switching sound effects on keep
   soundJson = JSON.stringify({ effects: [{ page: 1, line: 1, word: "creaked", sound: "a small wooden door creaks open", seconds: 2 }] });
   db.updateStory(id, { settings: { ...settings, effects: true } });
   startRecording(id);
-  assert.equal(estimate(), expectedSeconds("recording", 20 + 50), "the voices are kept: just choosing and making the sounds, and binding it together");
+  assert.equal(estimate(), expectedSeconds("recording", 20 + 25), "the voices are kept: just choosing and making the sounds, and binding it together");
   assert.equal((await finished()).status, "ready");
   assert.equal(db.getStoryById(id)!.script!.effects!.length, 1);
 
   startRecording(id);
   assert.equal(estimate(), binding(), "everything made already: only binding it together");
   await finished();
+});
+
+test("conjured straight through: pages are voiced while the rest is still being written, a few at a time, and none twice", async () => {
+  const db = await import("@/lib/server/db");
+  const { startWriting, isRunning } = await import("@/lib/server/jobs");
+  const { defaultSettings } = await import("@/lib/shared/options");
+  const hh = db.createHousehold("The Brook Family", "brook@example.com", "x");
+  const book = db.createBook(hh, { title: "The Long Brook", kind: "idea" });
+  const words = (n: number) => `Page ${n}: the brook ran on past the mill and the willow, singing its long silver song.`;
+  scriptJson = JSON.stringify({
+    title: "The Long Brook",
+    synopsis: "A brook's journey to the sea.",
+    ambience: "",
+    cast: [{ id: "narrator", name: "Narrator", description: "storyteller", voice_brief: "warm", voice_id: PERSONA_VOICE }],
+    pages: [1, 2, 3, 4, 5, 6].map((n) => ({ page: n, photo: 0, picture: `The brook, part ${n}`, effect: "none", lines: [{ speaker: "narrator", text: words(n) }] })),
+  });
+  const settings = { ...defaultSettings({ source: "idea", length: "medium" }), review: false, intro: false, chime: { enabled: false, style: "bell" as const, gapSeconds: 3 } };
+  const id = db.createStory(hh, { bookId: book, profileId: null, mode: "create", title: "A new story is brewing…", settings, status: "writing" });
+
+  const from = voiced.length;
+  process.env.VOICES_AT_ONCE = "2";
+  writingPause = 25;
+  voicingPause = 120;
+  mostVoicingAtOnce = 0;
+  try {
+    startWriting(id);
+    for (let i = 0; i < 600 && (isRunning(id) || db.getStoryById(id)!.status === "writing"); i++) await new Promise((r) => setTimeout(r, 25));
+  } finally {
+    delete process.env.VOICES_AT_ONCE;
+    writingPause = 0;
+    voicingPause = 0;
+  }
+  assert.equal(db.getStoryById(id)!.status, "ready");
+
+  const pageVoiced = (n: number) => voiced.slice(from).filter((v) => v.text.startsWith(`Page ${n}:`));
+  for (let n = 1; n <= 6; n++) assert.equal(pageVoiced(n).length, 1, `page ${n} is voiced once`);
+  assert.ok(pageVoiced(1)[0].at < writingEndedAt && pageVoiced(2)[0].at < writingEndedAt, "the first pages are voiced while the rest is still being written");
+  assert.ok(pageVoiced(6)[0].at >= writingEndedAt, "the last waits for the whole story, which ends by saying so");
+  assert.match(pageVoiced(6)[0].text, /The end\.$/);
+  assert.equal(mostVoicingAtOnce, 2, "two at a time (as VOICES_AT_ONCE says), never more");
 });
 
 test("a character's look can be written from a photo: the storyteller sees the photo and the family's words, and the photo isn't kept", async () => {

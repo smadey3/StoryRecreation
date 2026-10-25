@@ -61,14 +61,15 @@ test("while a story is written, the wait shown is until it's ready to hear: the 
   const story = (settings: Partial<Story["settings"]>) =>
     ({ id: "s1", bookId: "b1", mode: "create", settings: defaultSettings({ source: "idea", length: "medium", ...settings }) }) as Story;
 
-  // A medium story: about 2 minutes to write, then about 6 minutes of listening, voiced with a welcome.
-  assert.equal(readyInSeconds(story({ review: false }), 120), 120 + 133);
+  // A medium story: about 2 minutes to write. Its 6 pages are voiced as they're written, so what's left after is about
+  // the last page (some 56 seconds to hear, made in 34), the welcome alongside, and binding it all together.
+  assert.equal(readyInSeconds(story({ review: false }), 120), 120 + 58);
   // Read over before the voices record it: the wait is just the writing.
   assert.equal(readyInSeconds(story({ review: true }), 120), 120);
   // Sound effects to choose and make add a little.
-  assert.equal(readyInSeconds(story({ review: false, effects: true }), 120), 120 + 183);
+  assert.equal(readyInSeconds(story({ review: false, effects: true }), 120), 120 + 83);
 
   // Once the voices have been timed going slower than the rule of thumb, the wait says so.
   for (let i = 0; i < 3; i++) saveWorkTime("recording", 100, 150);
-  assert.equal(readyInSeconds(story({ review: false }), 120), 120 + Math.round(133 * 1.8));
+  assert.equal(readyInSeconds(story({ review: false }), 120), 120 + Math.round(58 * 1.8));
 });

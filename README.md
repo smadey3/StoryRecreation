@@ -209,8 +209,8 @@ a brand-new tale for the very same pictures.
   family's copy to keep, whatever happens to the app or the subscriptions.
 - **Every wait says so.** A tap that opens a page shows at once that it's on its way; writing and recording a
   story say about how long is left (and if it's taking longer than usual). The time shown while a story is
-  written counts the voices that record it next, so it's the wait until it's ready to hear, and every wait learns
-  from how long the last dozen like it really took, so it gets truer as you go. The play button's ring turns while
+  written counts the voices too, so it's the wait until it's ready to hear, and every wait learns from how long the
+  last dozen like it really took, so it gets truer as you go. The play button's ring turns while
   a story loads on a weak signal. Adding sound effects to a recorded story counts only the new sounds (the
   voices are kept). Conjuring a voice, teaching the storytellers a family voice, and re-binding a story with
   new sounds each say about how long they take. Every upload says how far along it is (a child's drawing,
@@ -297,6 +297,13 @@ humming placeholder voices.
   and stops before it would pass what was approved. See `src/lib/server/illustrator.ts` and `src/lib/server/art.ts`.
 - **What things cost** is worked out from each service's reported usage (`src/lib/server/prices.ts`) and kept in
   the database (`src/lib/server/spending.ts`), so estimates follow what the family's stories have really cost.
+- **Conjuring quickly.** ElevenLabs makes four recordings at once (`VOICES_AT_ONCE`, shared by every story being
+  made: one under the Creator plan's limit of 5, so a voice being designed still gets a turn; raise it on a bigger
+  plan, to 9 on Pro). The welcome, the soundscape and the sound effects are made alongside the pages, each page's
+  sound effects as soon as its words are timed. When nobody's reading a story over first, each page is voiced the
+  moment the storyteller has written it, while it writes the rest (`watchPages` in `src/lib/server/storyteller.ts`):
+  never the last page, which gets "The end", and never twice, since a recording asked for while it's being made is
+  waited for (`cachedPerformance` in `src/lib/server/jobs.ts`).
 - **How long things take** is learned the same way: each finished writing, recording, planning, sketching and
   drawing job is kept beside its rule of thumb (`src/lib/server/timing.ts`), and later waits go at the pace the last
   dozen really went, with a fifth to spare. Until three have been timed, the rule of thumb stands. The test copy and
@@ -421,7 +428,9 @@ The camera and "Add to Home Screen" need **HTTPS** (or `localhost`).
 **Who can sign up:** with `SIGNUP_CODE` set, creating a library needs the code. Without it, only the first
 family can sign up and the door closes behind them, so strangers who find the address can't spend your credits.
 
-Optional settings live in `.env.example` (`STORY_MODEL`, `VOICE_MODEL`, `ELEVENLABS_BASE_URL`, `DATA_DIR`).
+Optional settings live in `.env.example` (`STORY_MODEL`, `VOICE_MODEL`, `VOICES_AT_ONCE`, `ELEVENLABS_BASE_URL`,
+`DATA_DIR`). On a bigger ElevenLabs plan, set `VOICES_AT_ONCE` one under its limit (9 on Pro) to make stories faster
+still.
 
 ### Picture books
 
