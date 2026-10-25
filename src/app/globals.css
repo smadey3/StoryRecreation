@@ -1297,6 +1297,12 @@ a.choice {
   flex-wrap: wrap;
   gap: 10px;
 }
+/* A story as a PDF book: the button, then Share and Save once it's made. */
+.pdf-share {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+}
 .story-card-wrap .story-meta {
   padding-right: 46px;
 }

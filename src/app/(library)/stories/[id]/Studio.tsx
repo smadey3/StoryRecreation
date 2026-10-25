@@ -12,7 +12,9 @@ import { VoiceDesigner } from "@/components/VoiceDesigner";
 import { imageForPage } from "@/lib/shared/pages";
 import { formatDuration, rebindSeconds } from "@/lib/shared/options";
 import { WaitLine } from "@/components/Waiting";
+import { PdfShare } from "@/components/PdfShare";
 import { formatMoney } from "@/lib/shared/art";
+import { pdfOffer } from "@/lib/shared/pdf";
 import { PagePicture, Pictures } from "./Pictures";
 import type { AppStatus, Book, BookPage, ChimeSettings, DrawnBefore, Story, StoryScript, VoiceOption } from "@/lib/shared/types";
 
@@ -112,6 +114,13 @@ export function Studio({
   // Leading the page, they have the way to listen just below them, so they don't offer it too.
   const [picturesFirst, setPicturesFirst] = useState<boolean | null>(canPicture ? picturesToMake : null);
   if (picturesFirst === null && canPicture) setPicturesFirst(picturesToMake);
+  // A PDF book of it, to share or print: with its pictures, or (for a new story for a real book) its words alone.
+  const pdf = pdfOffer(story);
+  const pictured = Boolean(story.art?.pages.some(Boolean)) || story.settings.source === "wild";
+  const pdfNote =
+    pdf === "words"
+      ? "Its words, page by page, to read along with your copy of the book. The book's own pictures belong to its publisher, so they stay in your library."
+      : `Its ${pictured ? "pictures and words" : "words"}, to send to grandparents and friends, or to print at home.`;
   // The same panel all along, while the voices record and once the story is ready: the page around it changes, and the
   // key finds it again in its new place (both views share the outer stack), so a character's look half typed, a sketch
   // being chosen or a purchase half done carries on instead of starting over.
@@ -320,6 +329,14 @@ export function Studio({
             </a>{" "}
             for a speaker, the car, or a make-your-own Yoto card.
           </p>
+          {pdf && (
+            <PdfShare
+              storyId={story.id}
+              title={script?.title ?? story.title}
+              note={pdfNote}
+              seconds={pictured ? Math.round(3 + (script?.pages.length ?? 6) * 0.4) : 2}
+            />
+          )}
           <div className="parchment stack" style={{ textAlign: "left" }}>
             <SoundsPicker value={sounds} onChange={setSounds} />
             <details>
