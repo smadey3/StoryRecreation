@@ -2099,6 +2099,72 @@ button.step:hover {
   gap: 6px 10px;
   margin-top: 10px;
 }
+/* The two ways to make one: someone the family loves (first, and warmest), or one dreamed up. */
+.new-voice-way {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+  width: 100%;
+  padding: 14px 16px;
+  border: 1px solid rgba(107, 63, 21, 0.3);
+  border-radius: 12px;
+  background: rgba(255, 252, 242, 0.45);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    transform 0.15s,
+    box-shadow 0.15s,
+    border-color 0.15s;
+}
+.new-voice-way:hover,
+.new-voice-way:focus-visible {
+  border-color: rgba(168, 121, 43, 0.85);
+  box-shadow: 0 6px 18px rgba(90, 55, 32, 0.18);
+  transform: translateY(-1px);
+}
+.new-voice-way.loved {
+  border-color: rgba(168, 121, 43, 0.55);
+  background: linear-gradient(135deg, rgba(255, 233, 184, 0.85), rgba(244, 219, 168, 0.5));
+}
+.new-voice-face {
+  font-size: 1.8rem;
+  line-height: 1.1;
+}
+.new-voice-name {
+  display: block;
+  font-family: var(--font-heading);
+  font-size: 1.25rem;
+  color: #3b2212;
+}
+.new-voice-about {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.92rem;
+  line-height: 1.45;
+  color: var(--ink-soft);
+}
+/* A family voice made there: each person with recordings, and what's next for them. */
+.family-voice-person {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas: "face name" "face note" ". do";
+  align-items: center;
+  column-gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid rgba(107, 63, 21, 0.25);
+  border-radius: 12px;
+  background: rgba(255, 252, 242, 0.4);
+}
+.family-voice-do {
+  grid-area: do;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
 .voice-empty {
   margin: 0;
   padding: 26px 12px;
@@ -4620,7 +4686,8 @@ label.btn.disabled {
   text-transform: uppercase;
   color: #8a5a1c;
 }
-.did-you-know a {
+.did-you-know a,
+.did-you-know-go {
   color: inherit;
   font-weight: 600;
   white-space: nowrap;

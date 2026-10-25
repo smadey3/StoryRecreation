@@ -1,12 +1,20 @@
 import { apiCtx, HttpError, requireGrownup, route } from "@/lib/server/auth";
+import { config } from "@/lib/server/config";
 import { addKeepsake, listFamilyVoices, listKeepsakes } from "@/lib/server/db";
 import { saveAudio } from "@/lib/server/files";
 
 const MAX_MS = 20 * 60 * 1000;
 
+// The family's recordings and the voices learned from them, with what a family voice made away from the
+// Grown-ups' corner needs to know too: whether voices can be made, and the key for videos from Drive links.
 export const GET = route(async () => {
   const ctx = await apiCtx();
-  return Response.json({ keepsakes: listKeepsakes(ctx.household.id), familyVoices: listFamilyVoices(ctx.household.id) });
+  return Response.json({
+    keepsakes: listKeepsakes(ctx.household.id),
+    familyVoices: listFamilyVoices(ctx.household.id),
+    canMakeVoices: Boolean(config.elevenLabsKey) || config.demoMode,
+    driveKey: config.googleDriveKey ?? null,
+  });
 });
 
 // A recording to keep: a voicemail, a voice memo, a child reading aloud.

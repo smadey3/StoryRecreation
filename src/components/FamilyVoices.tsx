@@ -9,7 +9,7 @@ import { clock, isVideo, prepareRecording } from "@/lib/client/audio";
 import { fetchFromDrive } from "@/lib/client/drive";
 import { keepAwake, sendTrouble, sentWords, upload } from "@/lib/client/upload";
 import { familyVoiceSeconds } from "@/lib/shared/options";
-import type { FamilyVoice, Keepsake } from "@/lib/shared/types";
+import type { FamilyVoice, Keepsake, VoiceOption } from "@/lib/shared/types";
 
 // A family's voices, kept: a voicemail from Grandma, a child reading at four,
 // a bedtime song. A grown-up's recordings can also become a storytelling voice.
@@ -140,7 +140,7 @@ export function FamilyVoices({
                   keepsakes={mine}
                   enabled={canMakeVoices}
                   onClose={() => setMaking(null)}
-                  onMade={(name) => {
+                  onMade={({ name }) => {
                     setMaking(null);
                     setMsg(`${name} can read to you now: find them first in Read to Me, or pick them as the storyteller when you make a story.`);
                     router.refresh();
@@ -165,6 +165,153 @@ export function FamilyVoices({
           </details>
         );
       })}
+    </div>
+  );
+}
+
+type FamilyRecordings = { keepsakes: Keepsake[]; familyVoices: FamilyVoice[]; canMakeVoices: boolean; driveKey: string | null };
+
+/** A family voice as the storyteller lists know it. */
+const asStoryteller = (v: { voiceId: string; name: string; person: string; previewUrl: string | null }): VoiceOption => ({
+  voiceId: v.voiceId,
+  name: v.name,
+  description: `${v.person}, in their own voice`,
+  gender: null,
+  age: null,
+  accent: null,
+  previewUrl: v.previewUrl,
+  persona: null,
+  source: "family",
+});
+
+/**
+ * A family voice made right where a storyteller is chosen (making a story, Read to Me), so nothing chosen there is
+ * lost: a recording of them added, then their voice learned. The voice made, or one the family already has, is chosen.
+ */
+export function FamilyVoiceWindow({ onClose, onChosen }: { onClose: () => void; onChosen: (voice: VoiceOption) => void }) {
+  const api = useApi();
+  const [have, setHave] = useState<FamilyRecordings | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  // What's open: a recording being added (for someone new, "", or someone here), or a person's voice being learned.
+  const [adding, setAdding] = useState<string | null>(null);
+  const [making, setMaking] = useState<string | null>(null);
+
+  const load = async () => {
+    try {
+      const got = await api.get<FamilyRecordings>("/api/keepsakes");
+      setHave(got);
+      return got;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Your family's recordings couldn't be gathered.");
+      return null;
+    }
+  };
+  // With no recordings yet, the first thing to do is add one.
+  useEffect(() => {
+    void load().then((got) => got && !got.keepsakes.length && setAdding(""));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const people = [...new Set((have?.keepsakes ?? []).map((k) => k.person))];
+  const voiceFor = (person: string) => have?.familyVoices.find((v) => v.person === person);
+  const step = making !== null ? " · step 2 of 2" : adding !== null ? " · step 1 of 2" : "";
+
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="fvw-title">
+      <div className="modal parchment stack" style={{ width: "min(620px, 100%)" }}>
+        <div className="spread">
+          <div>
+            <div className="eyebrow">A family voice{step}</div>
+            <h2 id="fvw-title" style={{ margin: 0 }}>
+              💛 Someone you love
+            </h2>
+          </div>
+          <button className="icon-btn" onClick={onClose} aria-label="Close" style={{ color: "#3a2616", background: "rgba(255,255,255,.4)" }}>
+            ✕
+          </button>
+        </div>
+        {making === null && (
+          <p className="muted" style={{ margin: 0 }}>
+            Two steps: a recording of them (a voicemail, a video, or a minute or two of them reading aloud), then the storytellers
+            learn their voice, so they can read any story to you. Recordings stay private to your family.
+          </p>
+        )}
+        {error && <p className="notice notice-error small">{error}</p>}
+        {!have ? (
+          !error && (
+            <div className="wait-line" role="status">
+              <Spinner />
+              <div>Gathering your family&apos;s recordings…</div>
+            </div>
+          )
+        ) : making !== null ? (
+          <VoiceMaker
+            key={making}
+            person={making}
+            keepsakes={have.keepsakes.filter((k) => k.person === making)}
+            enabled={have.canMakeVoices}
+            onClose={() => setMaking(null)}
+            onMade={async (v) => {
+              const made = (await load())?.familyVoices.find((f) => f.voiceId === v.voiceId);
+              onChosen(asStoryteller(made ?? { ...v, person: making, previewUrl: null }));
+            }}
+          />
+        ) : adding !== null ? (
+          <KeepsakeAdder
+            key={adding}
+            people={people}
+            person={adding}
+            driveKey={have.driveKey}
+            onClose={() => (people.length ? setAdding(null) : onClose())}
+            onSaved={async (person) => {
+              await load();
+              setAdding(null);
+              setMaking(person);
+            }}
+          />
+        ) : (
+          <div className="stack" style={{ ["--gap" as string]: "8px" }}>
+            {people.map((person) => {
+              const mine = have.keepsakes.filter((k) => k.person === person);
+              const voice = voiceFor(person);
+              return (
+                <div key={person} className="family-voice-person">
+                  <span className="voice-folder-face" aria-hidden="true">
+                    {voice ? "💛" : "🎙️"}
+                  </span>
+                  <span className="voice-folder-name">{person}</span>
+                  <span className="voice-folder-note">
+                    {voice
+                      ? `Reads stories as “${voice.name}”`
+                      : `${mine.length} ${mine.length === 1 ? "recording" : "recordings"} · ${clock(mine.reduce((n, k) => n + k.durationMs, 0))}`}
+                  </span>
+                  <span className="family-voice-do">
+                    {voice ? (
+                      <button className="btn btn-sm" onClick={() => onChosen(asStoryteller(voice))}>
+                        Choose {voice.name}
+                      </button>
+                    ) : (
+                      <>
+                        <button className="btn btn-sm" onClick={() => setMaking(person)}>
+                          📖 Let {person} read stories
+                        </button>
+                        <button className="btn btn-quiet btn-sm" onClick={() => setAdding(person)}>
+                          ＋ Another recording
+                        </button>
+                      </>
+                    )}
+                  </span>
+                </div>
+              );
+            })}
+            <div>
+              <button className="btn btn-ghost btn-sm" onClick={() => setAdding("")}>
+                ＋ Someone new: add a recording or video
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -718,7 +865,7 @@ function VoiceMaker({
   keepsakes: Keepsake[];
   enabled: boolean;
   onClose: () => void;
-  onMade: (name: string) => void;
+  onMade: (voice: { voiceId: string; name: string }) => void;
 }) {
   const api = useApi();
   const [chosen, setChosen] = useState<string[]>(keepsakes.filter((k) => k.durationMs >= MIN_EACH_MS).map((k) => k.id));
@@ -772,8 +919,8 @@ function VoiceMaker({
           .filter(([id]) => chosen.includes(id))
           .map(([id, p]) => [id, { fromMs: p.from, toMs: p.to }]),
       );
-      const res = await api.post<{ name: string }>("/api/family-voices", { name, keepsakeIds: chosen, parts: learnFrom, adult, consent, cleanNoise });
-      onMade(res.name);
+      const res = await api.post<{ voiceId: string; name: string }>("/api/family-voices", { name, keepsakeIds: chosen, parts: learnFrom, adult, consent, cleanNoise });
+      onMade(res);
     } catch (err) {
       setError(err instanceof Error ? err.message : "That voice couldn't be made.");
       setBusy(null);
@@ -884,7 +1031,7 @@ function VoiceMaker({
           <span className="muted small">Best for voicemails and phone recordings. Turn off for recordings made in a quiet room.</span>
         </span>
       </label>
-      {!enabled && <p className="notice small">Making a storytelling voice needs your ElevenLabs key (see “The engines” above).</p>}
+      {!enabled && <p className="notice small">Making a storytelling voice needs your ElevenLabs key (see “The engines” in the Grown-ups&apos; corner).</p>}
       {error && <p className="notice notice-error small">{error}</p>}
       {busy ? (
         <WaitLine what={`Learning ${name}'s voice`} done={0} total={1} startedAt={busy.startedAt} seconds={busy.seconds} />

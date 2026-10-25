@@ -103,10 +103,13 @@ a brand-new tale for the very same pictures.
 - **🪄 Conjure a voice.** Describe one ("a tiny, squeaky mouse who talks very fast"), hear three versions, and
   keep your favorite in the family's voice wardrobe for future stories. A voice can be made speaking English,
   French or Spanish, with a natural accent.
-- **Make one right where you choose.** Every storyteller list ends with **🪄 Make a new voice**: dreamed up while
-  shaping a story, it's made in the story's language and picked for it, no trip to the Grown-ups' corner needed.
-  The filters (favorites, family, made by you…) wrap onto a second line on a phone, so every one is in view. On a
-  story's page, each character shows who voices them, with **✎ Change**.
+- **Make one right where you choose.** Every storyteller list ends with **🪄 Make a new voice** (“Someone you
+  love, from a voicemail or a video, or one you dream up”), which asks which: **💛 Someone you love** (a family
+  voice, below) or **🪄 Dream one up**. Either is made right there, without leaving the page or losing anything
+  chosen on it, and is picked as the storyteller. A dreamed-up voice is made in the story's language. Lists of
+  character voices go straight to dreaming one up, since a family voice only ever tells the story. The filters
+  (favorites, family, made by you…) wrap onto a second line on a phone, so every one is in view. On a story's
+  page, each character shows who voices them, with **✎ Change**.
 
 ### 💛 Family voices
 - **Keepsakes, kept just as they are.** Upload a voicemail, a voice memo or a video, or record right in the app:
@@ -132,10 +135,15 @@ a brand-new tale for the very same pictures.
   with a slider to move through it), add another of theirs, remove one, or let them read stories.
 - **Found where it matters, without getting in the way.** Until there's a family voice, every storyteller list
   (making a story, *Read to Me*, a story's *Who should read it?*) ends with a small *Did you know?*: someone you
-  love can read to you, from an old voicemail or a video, with *See how →* (✕ puts it away on that phone). *Read
-  to Me*'s own-words step and the welcome page mention it too. Once there is one, they come first in every
-  storyteller list, and their folder offers *Pick something to read* or *A new story, read by them*,
+  love can read to you, from an old voicemail or a video, with *Make their voice →* (✕ puts it away on that
+  phone). *Read to Me*'s own-words step and the welcome page mention it too. Once there is one, they come first in
+  every storyteller list, and their folder offers *Pick something to read* or *A new story, read by them*,
   which open with them already chosen.
+- **Made right where the storyteller is chosen.** *Someone you love* (under **🪄 Make a new voice**) and *Make
+  their voice →* open a window over the page, in two steps: a recording of them (a file, a video, a Google Drive
+  link, or *Record now*), then their voice learned. Someone with recordings already goes straight to the second
+  step, and someone who already reads stories can simply be chosen. The voice that's made becomes the storyteller
+  (“💛 Grandma June can read stories now.”), and whatever else was chosen on the page stays as it was.
 - **A grown-up's voice can read anything.** ElevenLabs instant voice cloning learns their voice from their
   recordings, and they then appear first in every storyteller list, ready to read a book, a poem or a letter.
   Making one asks the grown-up to confirm the voice is an adult's and that the family has the right to use it

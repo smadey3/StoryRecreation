@@ -2,11 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import Link from "next/link";
 import { pickPhotos, type PickedPhoto } from "@/lib/client/images";
 import { previewChime, previewVoice } from "@/lib/client/sound";
 import { CHIMES } from "@/lib/shared/options";
 import type { ChimeSettings, ChimeStyle, StoryLanguage, VoiceOption } from "@/lib/shared/types";
+import { FamilyVoiceWindow } from "./FamilyVoices";
 import { useApi } from "./Grownup";
 import { SideArrows, useSideScroll } from "./Shelf";
 import { VoiceDesigner } from "./VoiceDesigner";
@@ -154,8 +154,11 @@ export function PhotoPicker({
 const VOICE_MADE = "storyhollow:voice-made";
 const TIP_PUT_AWAY = "storyhollow:did-you-know-family-voices";
 
-/** A little "did you know?", like a small ad: someone you love can read too. ✕ puts it away on this phone. */
-function FamilyVoiceTip() {
+/**
+ * A little "did you know?", like a small ad: someone you love can read too, and their voice can be made right here.
+ * ✕ puts it away on this phone.
+ */
+function FamilyVoiceTip({ onMake }: { onMake: () => void }) {
   // Shown once the phone has said it wasn't put away (so it doesn't flash up and vanish).
   const [shown, setShown] = useState(false);
   useEffect(() => {
@@ -181,7 +184,10 @@ function FamilyVoiceTip() {
       </span>
       <span>
         <span className="did-you-know-label">Did you know?</span>
-        Someone you love can read to you, from an old voicemail or video. <Link href="/grownups#family-voices">See how →</Link>
+        Someone you love can read to you, from an old voicemail or video.{" "}
+        <button type="button" className="link-button did-you-know-go" onClick={onMake}>
+          Make their voice →
+        </button>
       </span>
       <button type="button" className="did-you-know-close" onClick={putAway} aria-label="Not now">
         ✕
@@ -252,8 +258,11 @@ export function VoicePicker({
 }) {
   const api = useApi();
   const [filter, setFilter] = useState<VoiceFilter>("all");
-  // The voice workshop, opened right here: the voice that's kept becomes the storyteller.
-  const [designing, setDesigning] = useState(false);
+  // A new voice, made right here: first how (someone the family loves, or one dreamed up in the voice workshop), then
+  // making it. The voice that's made becomes the storyteller.
+  const [making, setMaking] = useState<"choosing" | "family" | "dream" | null>(null);
+  // A family voice just made: a word that they can read now.
+  const [made, setMade] = useState<VoiceOption | null>(null);
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
   useEffect(() => {
     if (voices) setFavorites(new Set(voices.filter((v) => v.favorite).map((v) => v.voiceId)));
@@ -382,30 +391,96 @@ export function VoicePicker({
           })}
         </div>
       )}
+      {/* A family voice is only ever the storyteller, so it's offered where the storyteller is chosen. */}
       <div className="voice-make">
-        <button type="button" className="btn btn-ghost btn-sm" onClick={() => setDesigning(true)}>
+        <button type="button" className="btn btn-ghost btn-sm" onClick={() => setMaking(narratorsOnly ? "choosing" : "dream")}>
           🪄 Make a new voice
         </button>
         <span className="small" style={{ color: "var(--ink-soft)" }}>
-          Describe one, hear three, and keep your favorite.
+          {narratorsOnly ? "Someone you love, from a voicemail or a video, or one you dream up." : "Describe one, hear three, and keep your favorite."}
         </span>
       </div>
-      {/* No loved one's voice yet: a word that it's possible, and where it's set up. */}
-      {narratorsOnly && family.length === 0 && <FamilyVoiceTip />}
-      {designing &&
+      {made && value === made.voiceId && (
+        <p className="notice small" role="status" style={{ margin: "10px 0 0" }}>
+          💛 {made.name} can read stories now.
+        </p>
+      )}
+      {/* No loved one's voice yet: a word that it's possible, and a way to make it right here. */}
+      {narratorsOnly && family.length === 0 && <FamilyVoiceTip onMake={() => setMaking("family")} />}
+      {making &&
         createPortal(
-          <VoiceDesigner
-            initialLanguage={language}
-            onClose={() => setDesigning(false)}
-            onSaved={(v) => {
-              announceVoice({ ...v, gender: null, age: null, accent: null, previewUrl: null, persona: null, source: "designed" });
-              setDesigning(false);
-              setFilter("all");
-              onChange(v.voiceId);
-            }}
-          />,
+          making === "choosing" ? (
+            <NewVoiceChooser onChoose={setMaking} onClose={() => setMaking(null)} />
+          ) : making === "family" ? (
+            <FamilyVoiceWindow
+              onClose={() => setMaking(null)}
+              onChosen={(v) => {
+                // A voice just made joins every list of voices on the page; one the family had is simply chosen.
+                if (!family.some((f) => f.voiceId === v.voiceId)) {
+                  announceVoice(v);
+                  setMade(v);
+                }
+                setMaking(null);
+                setFilter("all");
+                onChange(v.voiceId);
+              }}
+            />
+          ) : (
+            <VoiceDesigner
+              initialLanguage={language}
+              onClose={() => setMaking(null)}
+              onSaved={(v) => {
+                announceVoice({ ...v, gender: null, age: null, accent: null, previewUrl: null, persona: null, source: "designed" });
+                setMaking(null);
+                setFilter("all");
+                onChange(v.voiceId);
+              }}
+            />
+          ),
           document.body,
         )}
+    </div>
+  );
+}
+
+/** How to make a new storyteller: someone the family loves, from their recordings, or one dreamed up in the voice workshop. */
+function NewVoiceChooser({ onChoose, onClose }: { onChoose: (way: "family" | "dream") => void; onClose: () => void }) {
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="nv-title">
+      <div className="modal parchment stack" style={{ width: "min(560px, 100%)" }}>
+        <div className="spread">
+          <div>
+            <div className="eyebrow">A new storyteller</div>
+            <h2 id="nv-title" style={{ margin: 0 }}>
+              🪄 Make a new voice
+            </h2>
+          </div>
+          <button className="icon-btn" onClick={onClose} aria-label="Close" style={{ color: "#3a2616", background: "rgba(255,255,255,.4)" }}>
+            ✕
+          </button>
+        </div>
+        <button type="button" className="new-voice-way loved" onClick={() => onChoose("family")}>
+          <span className="new-voice-face" aria-hidden="true">
+            💛
+          </span>
+          <span>
+            <span className="new-voice-name">Someone you love</span>
+            <span className="new-voice-about">
+              Grandma, Grandpa, a parent who&apos;s far away: from a voicemail, a video, or a minute of them reading aloud, they can
+              read any story, in their own voice. Recordings stay private to your family.
+            </span>
+          </span>
+        </button>
+        <button type="button" className="new-voice-way" onClick={() => onChoose("dream")}>
+          <span className="new-voice-face" aria-hidden="true">
+            🪄
+          </span>
+          <span>
+            <span className="new-voice-name">Dream one up</span>
+            <span className="new-voice-about">Describe any voice (a sleepy old owl, a jolly pirate), hear three, and keep your favorite.</span>
+          </span>
+        </button>
+      </div>
     </div>
   );
 }
