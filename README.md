@@ -210,7 +210,8 @@ a brand-new tale for the very same pictures.
 - **Every wait says so.** A tap that opens a page shows at once that it's on its way; writing and recording a
   story say about how long is left (and if it's taking longer than usual). The time shown while a story is
   written counts the voices too, so it's the wait until it's ready to hear, and every wait learns from how long the
-  last dozen like it really took, so it gets truer as you go. The play button's ring turns while
+  last dozen like it really took, so it gets truer as you go. When many families are making stories at once, a
+  story waiting its turn for the voices says its place in line and about how long. The play button's ring turns while
   a story loads on a weak signal. Adding sound effects to a recorded story counts only the new sounds (the
   voices are kept). Conjuring a voice, teaching the storytellers a family voice, and re-binding a story with
   new sounds each say about how long they take. Every upload says how far along it is (a child's drawing,
@@ -304,6 +305,15 @@ humming placeholder voices.
   moment the storyteller has written it, while it writes the rest (`watchPages` in `src/lib/server/storyteller.ts`):
   never the last page, which gets "The end", and never twice, since a recording asked for while it's being made is
   waited for (`cachedPerformance` in `src/lib/server/jobs.ts`).
+- **Many families at once.** Every story shares the voices through one fair line (`src/lib/server/line.ts`): the
+  story started first has its turns first, and a story waiting with nothing being made for it says where it stands
+  ("Waiting for a free storyteller · 3rd in line") and about how long, the time it waits added to the wait it was
+  told (and left out of the times the waits learn from). A family makes one story at a time, so no family can fill
+  the line. When the storyteller is busy (Anthropic's limit for the minute), a story waits and asks again for up to
+  about three minutes, saying so, instead of failing. Finished stories are put together one at a time, and the
+  mixing and MP3 give way to everything else every few milliseconds, so the app never stops answering while a story
+  is bound. A story that an update or restart stops midway carries on by itself once the app is back, keeping the
+  pages already voiced (one stopped twice is let go, with a word to try again).
 - **How long things take** is learned the same way: each finished writing, recording, planning, sketching and
   drawing job is kept beside its rule of thumb (`src/lib/server/timing.ts`), and later waits go at the pace the last
   dozen really went, with a fifth to spare. Until three have been timed, the rule of thumb stands. The test copy and

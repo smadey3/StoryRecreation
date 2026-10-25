@@ -6,6 +6,7 @@ import { artBusy, drawnBeforeUrls, resumeLostArt } from "@/lib/server/art";
 import { planCostGuess } from "@/lib/server/prices";
 import { pictureSpendForStory, writeCosts } from "@/lib/server/spending";
 import { picturePace } from "@/lib/server/timing";
+import { isRunning, resumeLostStory, withPlaceInLine } from "@/lib/server/jobs";
 import { Studio } from "./Studio";
 
 export default async function StoryPage(props: PageProps<"/stories/[id]">) {
@@ -13,6 +14,10 @@ export default async function StoryPage(props: PageProps<"/stories/[id]">) {
   const ctx = await pageCtx();
   let story = getStory(ctx.household.id, id);
   if (!story) notFound();
+  if ((story.status === "writing" || story.status === "recording") && !isRunning(id)) {
+    resumeLostStory(id);
+    story = getStory(ctx.household.id, id)!;
+  }
   if (story.art && story.art.status !== "idle" && !artBusy(id)) {
     resumeLostArt(id);
     story = getStory(ctx.household.id, id)!;
@@ -22,7 +27,7 @@ export default async function StoryPage(props: PageProps<"/stories/[id]">) {
   return (
     <main className="page page-narrow">
       <Studio
-        initial={story}
+        initial={withPlaceInLine(story)}
         book={book}
         photos={listPages(book.id)}
         status={{ ...appStatus(), pace: picturePace() }}

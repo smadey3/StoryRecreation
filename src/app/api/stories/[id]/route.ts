@@ -1,7 +1,7 @@
 import { apiCtx, HttpError, readJson, requireGrownup, route } from "@/lib/server/auth";
 import { deleteStory, getStory, updateStory } from "@/lib/server/db";
 import { removeDir, storyDir } from "@/lib/server/files";
-import { isRunning } from "@/lib/server/jobs";
+import { isRunning, resumeLostStory, withPlaceInLine } from "@/lib/server/jobs";
 import { artBusy, drawnBeforeUrls, resumeLostArt } from "@/lib/server/art";
 import { pictureSpendForStory } from "@/lib/server/spending";
 import type { StoryScript } from "@/lib/shared/types";
@@ -12,19 +12,15 @@ export const GET = route(async (_req: Request, ctx: RouteContext<"/api/stories/[
   let story = getStory(c.household.id, id);
   if (!story) throw new HttpError(404, "That story wasn't found.");
   if ((story.status === "writing" || story.status === "recording") && !isRunning(id)) {
-    // The job was lost (e.g. the server restarted): let the family retry.
-    updateStory(id, {
-      status: "error",
-      progress: null,
-      error: 'The storyteller was interrupted. Press "Try again" to pick up where it left off.',
-    });
+    // The work was stopped midway (by a restart, say): it carries on.
+    resumeLostStory(id);
     story = getStory(c.household.id, id)!;
   }
   if (story.art && story.art.status !== "idle" && !artBusy(id)) {
     resumeLostArt(id);
     story = getStory(c.household.id, id)!;
   }
-  return Response.json({ story, running: isRunning(id), pictureSpend: pictureSpendForStory(id), drawnBefore: drawnBeforeUrls(c.household.id, id) });
+  return Response.json({ story: withPlaceInLine(story), running: isRunning(id), pictureSpend: pictureSpendForStory(id), drawnBefore: drawnBeforeUrls(c.household.id, id) });
 });
 
 /** Edit the draft (title, lines, cast voices) or mark a favorite. */

@@ -9,6 +9,7 @@ import {
   getProfile,
   getSession,
   setSessionGrownup,
+  storyBeingMade,
   type HouseholdRow,
   type SessionRow,
 } from "./db";
@@ -83,6 +84,15 @@ export async function apiCtx(): Promise<Ctx> {
 /** Spending credits or changing settings needs a grown-up when a PIN is set. */
 export function requireGrownup(ctx: Ctx) {
   if (!ctx.grownup) throw new HttpError(403, "A grown-up needs to enter the PIN.", "pin_required");
+}
+
+/**
+ * A family makes one story at a time, so every family gets its turn with the voices when many are making stories at
+ * once: starting another (or re-recording one) waits until theirs is ready, and says which it is.
+ */
+export function oneStoryAtATime(ctx: Ctx, exceptId?: string) {
+  const other = storyBeingMade(ctx.household.id, exceptId);
+  if (other) throw new HttpError(409, `One story at a time: “${other.title}” is still being made. This one can start as soon as it's ready.`, "one_at_a_time");
 }
 
 /** Until when a PIN entered now unlocks this device: half an hour, or 30 days when it's to be remembered. */

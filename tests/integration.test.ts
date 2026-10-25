@@ -45,6 +45,7 @@ const OWL_VOICE = "pqHfZKP75CvOlQylNhV4";
 
 // A storyteller that writes slowly (milliseconds between pieces), and voices that take a while, to watch what happens
 // while each is at work: when the script finished, and every recording asked for, when, and how many at once.
+let busyFor = 0; // the storyteller's next few requests are turned away: too many this minute
 let writingPause = 0;
 let writingEndedAt = 0;
 let voicingPause = 0;
@@ -92,6 +93,11 @@ before(async () => {
       const body = raw && String(req.headers["content-type"] ?? "").includes("json") ? JSON.parse(raw) : raw || null;
       captured.push({ method: req.method!, url: req.url!, headers: req.headers, body });
       if (req.url!.startsWith("/v1/messages")) {
+        if (busyFor > 0) {
+          busyFor--;
+          res.writeHead(429, { "content-type": "application/json", "retry-after-ms": "150" });
+          return res.end(JSON.stringify({ type: "error", error: { type: "rate_limit_error", message: "Too many tokens this minute." } }));
+        }
         if ((body as { stream?: boolean }).stream) return sse(res, scriptJson);
         res.writeHead(200, { "content-type": "application/json" });
         return res.end(
@@ -654,7 +660,7 @@ test("sound effects are chosen for a finished script, made short, and land on th
   assert.equal(cueTime(script.pages[0], clip, { ...cues[0], word: "slammed" }), null);
 
   const silent = { samples: new Float32Array(SAMPLE_RATE * 6), words };
-  const { samples, timeline } = mixStory({
+  const { samples, timeline } = await mixStory({
     pages: [{ page: 1, clip: silent }],
     chime: { ...defaultSettings().chime, enabled: false },
     effects: [{ page: 1, at: 4.45, samples: sfx }],
@@ -918,6 +924,143 @@ test("conjured straight through: pages are voiced while the rest is still being 
   assert.ok(pageVoiced(6)[0].at >= writingEndedAt, "the last waits for the whole story, which ends by saying so");
   assert.match(pageVoiced(6)[0].text, /The end\.$/);
   assert.equal(mostVoicingAtOnce, 2, "two at a time (as VOICES_AT_ONCE says), never more");
+});
+
+test("when the storyteller is busy, the story waits its turn and carries on, saying so meanwhile", async () => {
+  const { writeScript } = await import("@/lib/server/storyteller");
+  const { defaultSettings } = await import("@/lib/shared/options");
+  const { voiceCatalog } = await import("@/lib/server/voices");
+  scriptJson = JSON.stringify({
+    title: "The Patient Owl",
+    synopsis: "An owl waits.",
+    ambience: "",
+    cast: [{ id: "narrator", name: "Narrator", description: "storyteller", voice_brief: "warm", voice_id: PERSONA_VOICE }],
+    pages: [{ page: 1, photo: 0, picture: "An owl", effect: "none", lines: [{ speaker: "narrator", text: "The owl waited, and waited." }] }],
+  });
+  // More busy replies than Anthropic's own quick retries ride out.
+  busyFor = 5;
+  const steps: string[] = [];
+  const { script } = await writeScript(
+    {
+      mode: "create",
+      bookTitle: "Owls",
+      bookKind: "idea",
+      settings: defaultSettings({ source: "idea" }),
+      images: [],
+      pageCount: 1,
+      previousStories: [],
+      rememberedCharacters: [],
+      voices: await voiceCatalog("household-1"),
+    },
+    (step) => steps.push(step),
+  );
+  assert.equal(busyFor, 0);
+  assert.equal(script.title, "The Patient Owl");
+  assert.ok(steps.includes("The storyteller is busy, so the story waits a moment"), steps.join(" / "));
+});
+
+test("a family makes one story at a time", async () => {
+  const db = await import("@/lib/server/db");
+  const { defaultSettings } = await import("@/lib/shared/options");
+  const hh = db.createHousehold("The One Family", "one@example.com", "x");
+  const book = db.createBook(hh, { title: "One Book", kind: "idea" });
+  const making = db.createStory(hh, { bookId: book, profileId: null, mode: "create", title: "The Busy Badger", settings: defaultSettings({ source: "idea" }), status: "writing" });
+  const done = db.createStory(hh, { bookId: book, profileId: null, mode: "create", title: "The Sleepy Fox", settings: defaultSettings({ source: "idea" }), status: "ready" });
+  assert.deepEqual(db.storyBeingMade(hh), { id: making, title: "The Busy Badger" });
+  assert.deepEqual(db.storyBeingMade(hh, done), { id: making, title: "The Busy Badger" }, "re-recording another waits for it");
+  assert.equal(db.storyBeingMade(hh, making), null, "but the story being made can carry on");
+  assert.equal(db.storyBeingMade(db.createHousehold("The Two Family", "two@example.com", "x")), null, "and other families aren't held up");
+  db.updateStory(making, { status: "ready" });
+  assert.equal(db.storyBeingMade(hh), null);
+});
+
+test("two families making stories at once: the one started first is voiced first, and the other is told its place in line", async () => {
+  const db = await import("@/lib/server/db");
+  const { startRecording, isRunning, withPlaceInLine } = await import("@/lib/server/jobs");
+  const { defaultSettings } = await import("@/lib/shared/options");
+  const settings = { ...defaultSettings({ source: "idea" }), intro: false, chime: { enabled: false, style: "bell" as const, gapSeconds: 3 } };
+  const story = (family: string) => {
+    const hh = db.createHousehold(`The ${family} Family`, `${family.toLowerCase()}@example.com`, "x");
+    const book = db.createBook(hh, { title: `${family}'s Book`, kind: "idea" });
+    const id = db.createStory(hh, { bookId: book, profileId: null, mode: "create", title: `${family}'s Story`, settings, status: "draft" });
+    db.updateStory(id, {
+      script: {
+        title: `${family}'s Story`,
+        synopsis: "",
+        ambience: "",
+        cast: [{ id: "narrator", name: "Narrator", description: "", voiceBrief: "", voiceId: PERSONA_VOICE }],
+        pages: [1, 2, 3].map((n) => ({ page: n, picture: "", lines: [{ speaker: "narrator", text: `${family}, page ${n}: once upon a time there was a lantern.` }] })),
+      },
+    });
+    return id;
+  };
+  const first = story("Ash");
+  const second = story("Birch");
+  process.env.VOICES_AT_ONCE = "1";
+  voicingPause = 60;
+  const placesSaid = new Set<string>();
+  try {
+    startRecording(second, Date.now() + 1000); // asked for first, but started later
+    startRecording(first, Date.now());
+    for (let i = 0; i < 400 && (isRunning(first) || isRunning(second)); i++) {
+      const step = withPlaceInLine(db.getStoryById(second)!).progress?.step;
+      if (step?.startsWith("Waiting for a free storyteller")) placesSaid.add(step);
+      await new Promise((r) => setTimeout(r, 15));
+    }
+  } finally {
+    delete process.env.VOICES_AT_ONCE;
+    voicingPause = 0;
+  }
+  assert.equal(db.getStoryById(first)!.status, "ready");
+  assert.equal(db.getStoryById(second)!.status, "ready");
+  const voicedPages = voiced.filter((v) => /^(Ash|Birch), page/.test(v.text)).map((v) => v.text.slice(0, v.text.indexOf(":")));
+  const lastOfFirst = voicedPages.indexOf("Ash, page 3");
+  // A turn the later story took before the earlier one asked (the line was free) can come first; nothing else of it does.
+  assert.ok(voicedPages.slice(0, lastOfFirst).filter((p) => p.startsWith("Birch")).length <= 1, voicedPages.join(", "));
+  assert.equal(voicedPages.length, 6, voicedPages.join(", "));
+  assert.ok([...placesSaid].some((p) => /next in line|2nd in line/.test(p)), [...placesSaid].join(" / ") || "never said");
+});
+
+test("a story stopped midway by a restart carries on by itself, keeping the pages already voiced", async () => {
+  const db = await import("@/lib/server/db");
+  const { resumeLostStory, isRunning } = await import("@/lib/server/jobs");
+  const { defaultSettings } = await import("@/lib/shared/options");
+  const hh = db.createHousehold("The Restart Family", "restart@example.com", "x");
+  const book = db.createBook(hh, { title: "Restarts", kind: "idea" });
+  const settings = { ...defaultSettings({ source: "idea" }), intro: false, review: false, chime: { enabled: false, style: "bell" as const, gapSeconds: 3 } };
+  const script = {
+    title: "The Brave Kettle",
+    synopsis: "",
+    ambience: "",
+    cast: [{ id: "narrator", name: "Narrator", description: "", voiceBrief: "", voiceId: PERSONA_VOICE }],
+    pages: [{ page: 1, picture: "", lines: [{ speaker: "narrator", text: "The kettle sang, and the restart did not stop it." }] }],
+  };
+  const finished = async (id: string) => {
+    for (let i = 0; i < 400 && isRunning(id); i++) await new Promise((r) => setTimeout(r, 25));
+    return db.getStoryById(id)!;
+  };
+
+  // Recording when the app restarted: it picks up again.
+  const recording = db.createStory(hh, { bookId: book, profileId: null, mode: "create", title: script.title, settings, status: "recording" });
+  db.updateStory(recording, { script, progress: { step: "Recording the voices", done: 0, total: 2, startedAt: Date.now() - 5000, seconds: 30 } });
+  resumeLostStory(recording);
+  assert.equal(db.getStoryById(recording)!.progress?.resumed, 1);
+  assert.equal((await finished(recording)).status, "ready");
+
+  // Being written: the writing starts again.
+  scriptJson = JSON.stringify({ ...script, cast: [{ id: "narrator", name: "Narrator", description: "", voice_brief: "", voice_id: PERSONA_VOICE }], pages: [{ page: 1, photo: 0, picture: "", effect: "none", lines: script.pages[0].lines }] });
+  const writing = db.createStory(hh, { bookId: book, profileId: null, mode: "create", title: "…", settings: { ...settings, length: "short" as const }, status: "writing" });
+  db.updateStory(writing, { progress: { step: "Writing the pages", done: 1, total: 4, startedAt: Date.now() - 5000, seconds: 60 } });
+  resumeLostStory(writing);
+  assert.equal((await finished(writing)).status, "ready");
+
+  // One that keeps stopping the app is let go after two tries, with a word to try again.
+  const stubborn = db.createStory(hh, { bookId: book, profileId: null, mode: "create", title: script.title, settings, status: "recording" });
+  db.updateStory(stubborn, { script, progress: { step: "Recording the voices", done: 0, total: 2, startedAt: Date.now(), seconds: 30, resumed: 2 } });
+  resumeLostStory(stubborn);
+  const gaveUp = db.getStoryById(stubborn)!;
+  assert.equal(gaveUp.status, "error");
+  assert.match(gaveUp.error!, /Try again/);
 });
 
 test("a character's look can be written from a photo: the storyteller sees the photo and the family's words, and the photo isn't kept", async () => {

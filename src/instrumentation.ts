@@ -7,6 +7,9 @@ export async function register() {
     // Classic covers kept with their books, for books shelved before covers were kept.
     const { keepMissingCoversSoon } = await import("./lib/server/covers");
     keepMissingCoversSoon();
+    // Stories a restart (an update, say) stopped midway carry on, keeping the pages already voiced.
+    const { resumeLostStoriesSoon } = await import("./lib/server/jobs");
+    resumeLostStoriesSoon();
     // The illustrator carries on with any pictures a restart (an update, say) stopped midway.
     const { resumeLostArtSoon } = await import("./lib/server/art");
     resumeLostArtSoon();

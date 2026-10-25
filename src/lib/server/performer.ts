@@ -1,5 +1,6 @@
 import { ElevenLabsError } from "@elevenlabs/elevenlabs-js";
 import { config } from "./config";
+import { turns } from "./line";
 import { eleven } from "./voices";
 import { chunkLines, speakable } from "./text";
 import { concatClips, demoAmbience, demoSoundEffect, demoVoiceClip, pcm16ToFloat, SAMPLE_RATE, type Clip } from "./audio";
@@ -18,36 +19,11 @@ function useDemo(): boolean {
   return !config.elevenLabsKey && config.demoMode;
 }
 
-/** Work done a few at a time, in the order it was asked for. */
-class Turns {
-  private busy = 0;
-  private waiting: (() => void)[] = [];
-  constructor(private size: () => number) {}
-
-  async run<T>(fn: () => Promise<T>): Promise<T> {
-    if (this.busy < this.size()) this.busy++;
-    else await new Promise<void>((go) => this.waiting.push(go));
-    try {
-      return await fn();
-    } finally {
-      // The turn passes straight to whoever's next.
-      const next = this.waiting.shift();
-      if (next) next();
-      else this.busy--;
-    }
-  }
-}
-
 /**
- * ElevenLabs makes only so many recordings at once for an account, whoever asks (5 on Creator, 10 on Pro). The stories
- * keep to VOICES_AT_ONCE between them, every page, welcome and sound of every story taking its turn, which leaves room
- * for a voice being designed or learned. Kept on globalThis so every part of the app shares the one count.
+ * A recording for a story: made when its turn comes in the voices' line (line.ts, which keeps every story to the
+ * account's limit, earliest story first), and asked for again if ElevenLabs is busy (the turn given up while waiting).
  */
-const globalForVoices = globalThis as unknown as { __storyhollowVoiceTurns?: Turns };
-const voiceTurns = (globalForVoices.__storyhollowVoiceTurns ??= new Turns(() => config.voicesAtOnce));
-
-/** A recording for a story: made when its turn comes, and asked for again if ElevenLabs is busy (the turn is given up while waiting). */
-const voiced = <T>(fn: () => Promise<T>) => withRetry(() => voiceTurns.run(fn));
+const voiced = <T>(fn: () => Promise<T>) => withRetry(() => turns.voices.run(fn));
 
 /** Perform lines with the cast's voices, in the story's language (said to ElevenLabs, so every word is spoken as it should be). */
 export async function performLines(lines: ScriptLine[], cast: CastMember[], language: StoryLanguage = "en"): Promise<Clip> {

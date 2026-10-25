@@ -12,6 +12,7 @@ import {
   previousStoriesForBook,
   rememberCharacters,
   replacePages,
+  storiesBeingMade,
   updateBook,
   updateStory,
   type PageRow,
@@ -29,6 +30,7 @@ import { recordSpend } from "./spending";
 import { planPicturesAfterWriting } from "./art";
 import { sectionText, stripTags, withTheEnd } from "./text";
 import { expectedSeconds, noteWorkTime } from "./timing";
+import { forStory, turns, type Place } from "./line";
 import { personaFor } from "@/lib/shared/personas";
 import { SAYINGS, guessLanguage, languageOf } from "@/lib/shared/languages";
 import { LENGTHS, WORDS_PER_MINUTE, estimateMinutes } from "@/lib/shared/options";
@@ -71,18 +73,24 @@ function launch(key: string, storyId: string, fn: () => Promise<(() => void) | v
 
 // -------------------------------------------------------------- writing
 
-export function startWriting(storyId: string) {
+/** Write a story (or prepare a reading). `resumed` counts the times a restart has picked it up again. */
+export function startWriting(storyId: string, resumed = 0) {
   const story = getStoryById(storyId);
   const work = story?.mode === "read" ? "reading" : "writing";
   const guess = story ? writingSeconds(story.settings, story.mode) : null;
   const startedAt = Date.now();
-  const progress = { step: "Opening the book", done: 0, total: 1, startedAt, seconds: story && guess ? readyInSeconds(story, guess) : 5 };
-  updateStory(storyId, { status: "writing", error: null, progress });
-  launch("write", storyId, async () => {
-    const next = await writeStory(storyId);
-    if (guess) noteWorkTime(work, guess, startedAt);
-    return next;
-  });
+  const seconds = story && guess ? readyInSeconds(story, guess) : 5;
+  updateStory(storyId, { status: "writing", error: null, progress: { step: "Opening the book", done: 0, total: 1, startedAt, seconds, ...(resumed ? { resumed } : {}) } });
+  // Its turn in the line for the voices begins now: pages voiced as they're written, and the recording that follows,
+  // all wait in this place.
+  const place = { story: storyId, since: startedAt };
+  launch("write", storyId, () =>
+    forStory(place, async () => {
+      const recordNext = await writeStory(storyId, place);
+      if (guess) noteWorkTime(work, guess, startedAt);
+      if (recordNext) return () => startRecording(storyId, place.since);
+    }),
+  );
 }
 
 /**
@@ -115,16 +123,15 @@ function pageCountFor(source: string, length: string, photos: number): number {
   return byLength;
 }
 
-async function writeStory(storyId: string): Promise<(() => void) | void> {
+/** Write the story; true when the voices record it next (nobody's reading it over first). */
+async function writeStory(storyId: string, place: Place): Promise<boolean> {
   const story = getStoryById(storyId);
-  if (!story) return;
+  if (!story) return false;
   const book = getBook(story.householdId, story.bookId);
   if (!book) throw new Error("Book is missing");
   const s = story.settings;
   // Each step keeps when the writing started and about how long it takes.
-  const { startedAt, seconds } = story.progress ?? {};
-  const progress = (step: string, done: number, total: number) =>
-    updateStory(storyId, { progress: { step, done, total, startedAt, seconds } });
+  const progress = (step: string, done: number, total: number) => updateStory(storyId, { progress: { ...story.progress, step, done, total } });
 
   const voices = castableVoices(await voiceCatalog(story.householdId), s.narratorVoiceId);
   const narratorVoice = s.narratorVoiceId ?? voices.find((v) => v.persona)?.voiceId ?? voices[0]?.voiceId ?? "";
@@ -180,7 +187,7 @@ async function writeStory(storyId: string): Promise<(() => void) | void> {
       voices,
       // Nobody's reading it over first: each page is voiced as soon as it's written, while the storyteller writes the
       // rest, and the recording that follows finds it made (or still being made, and waits for it).
-      ...(!s.review && config.elevenLabsKey ? { onPage: (page: ScriptPage, cast: Voices) => voiceEarly(storyDir(story.householdId, storyId), page, cast) } : {}),
+      ...(!s.review && config.elevenLabsKey ? { onPage: (page: ScriptPage, cast: Voices) => voiceEarly(storyDir(story.householdId, storyId), page, cast, place) } : {}),
     };
     const written =
       config.anthropicKey || !config.demoMode ? await writeScript(req, progress) : await writeDemoScript(req, progress);
@@ -212,15 +219,14 @@ async function writeStory(storyId: string): Promise<(() => void) | void> {
 
   // A picture book: the illustrator reads the story and plans what to draw, ready for the family to meet the characters.
   if (s.pictures && story.mode === "create") planPicturesAfterWriting(storyId);
-  if (!s.review) return () => startRecording(storyId);
+  return !s.review;
 }
 
-/** A page written while the rest of the story is still being written: voiced now, ready for the recording. */
-function voiceEarly(dir: string, page: ScriptPage, voices: Voices) {
-  void fs.promises
-    .mkdir(dir, { recursive: true })
-    .then(() => cachedPerformance(dir, pageClip(page.page), page.lines, voices))
-    .catch((err) => console.warn(`Page ${page.page} will be voiced with the rest:`, err));
+/** A page written while the rest of the story is still being written: voiced now (in the story's place in line), ready for the recording. */
+function voiceEarly(dir: string, page: ScriptPage, voices: Voices, place: Place) {
+  void forStory(place, () => fs.promises.mkdir(dir, { recursive: true }).then(() => cachedPerformance(dir, pageClip(page.page), page.lines, voices))).catch(
+    (err) => console.warn(`Page ${page.page} will be voiced with the rest:`, err),
+  );
 }
 
 /**
@@ -240,17 +246,91 @@ export function applyPhotoOrder(householdId: string, bookId: string, sent: PageR
 
 // ------------------------------------------------------------ recording
 
-export function startRecording(storyId: string) {
+/**
+ * Record a story. `since` is when its turn in line began (when it was started, for a story recorded as soon as it's
+ * written); `resumed` counts the times a restart has picked it up again.
+ */
+export function startRecording(storyId: string, since = Date.now(), resumed = 0) {
   const story = getStoryById(storyId);
   const step = story?.audioUrl ? "Opening the recordings" : "Warming up the voices";
   const guess = story?.script ? recordingSeconds(story.script, story.settings, storyDir(story.householdId, storyId)) : null;
   const startedAt = Date.now();
   const seconds = guess ? expectedSeconds("recording", guess) : 5;
-  updateStory(storyId, { status: "recording", error: null, progress: { step, done: 0, total: 1, startedAt, seconds } });
-  launch("record", storyId, async () => {
-    await recordStory(storyId);
-    if (guess) noteWorkTime("recording", guess, startedAt);
-  });
+  updateStory(storyId, { status: "recording", error: null, progress: { step, done: 0, total: 1, startedAt, seconds, ...(resumed ? { resumed } : {}) } });
+  launch("record", storyId, () =>
+    forStory({ story: storyId, since }, async () => {
+      try {
+        await recordStory(storyId);
+        // Only the making counts, not the waiting in line.
+        if (guess) noteWorkTime("recording", guess, startedAt, turns.voices.waitedSeconds(storyId) + turns.binding.waitedSeconds(storyId));
+      } finally {
+        turns.voices.forget(storyId);
+        turns.binding.forget(storyId);
+      }
+    }),
+  );
+}
+
+/**
+ * A story being recorded, as its family should see it. Waiting its turn for a free storyteller, with nothing being
+ * made for it, it says so, with its place in line and about how long; and the time it has spent waiting is added to
+ * the wait it was told, which counted only the making.
+ */
+export function withPlaceInLine(story: Story): Story {
+  const p = story.progress;
+  if (story.status !== "recording" || !p?.startedAt || !p.seconds) return story;
+  const waited = turns.voices.waitedSeconds(story.id) + turns.binding.waitedSeconds(story.id);
+  const place = turns.voices.placeOf(story.id);
+  if (!place) return waited ? { ...story, progress: { ...p, seconds: Math.round(p.seconds + waited) } } : story;
+  const left = p.total > 0 ? 1 - p.done / p.total : 1;
+  const step = `Waiting for a free storyteller · ${place.ahead ? `${ordinal(place.ahead + 1)} in line` : "next in line"}`;
+  return { ...story, progress: { ...p, step, startedAt: Date.now(), seconds: Math.round(place.seconds + p.seconds * left) } };
+}
+
+/** "2nd", "3rd", "11th", "21st" */
+export function ordinal(n: number): string {
+  const tens = n % 100;
+  const suffix = tens >= 11 && tens <= 13 ? "th" : ({ 1: "st", 2: "nd", 3: "rd" } as Record<number, string>)[n % 10] ?? "th";
+  return `${n}${suffix}`;
+}
+
+// ------------------------------------------------------------ after a restart
+
+const INTERRUPTED = 'The storyteller was interrupted. Press "Try again" to pick up where it left off.';
+
+/**
+ * A story a restart stopped midway (an update, say) carries on by itself: the writing starts again, or the recording
+ * picks up with the pages already made. One that has already been picked up twice is let go, with a word to try again,
+ * so a story that keeps stopping the app can't keep it from starting.
+ */
+export function resumeLostStory(storyId: string) {
+  const story = getStoryById(storyId);
+  if (!story || (story.status !== "writing" && story.status !== "recording") || isRunning(storyId)) return;
+  const resumed = (story.progress?.resumed ?? 0) + 1;
+  if (resumed > 2) {
+    updateStory(storyId, { status: "error", error: INTERRUPTED, progress: null });
+    return;
+  }
+  // It keeps its place in line: when it was started.
+  if (story.status === "recording" && story.script) startRecording(storyId, story.progress?.startedAt ?? Date.now(), resumed);
+  else startWriting(storyId, resumed);
+}
+
+/** Once the app has started: every story it stopped midway carries on. */
+export function resumeLostStoriesSoon() {
+  setTimeout(() => {
+    try {
+      for (const id of storiesBeingMade()) {
+        try {
+          resumeLostStory(id);
+        } catch (err) {
+          console.error(`[story] ${id}: couldn't carry on after a restart`, err);
+        }
+      }
+    } catch (err) {
+      console.error("[story] couldn't look for stories to carry on with", err);
+    }
+  }, 2_000).unref();
 }
 
 /**
@@ -412,8 +492,7 @@ async function recordStory(storyId: string) {
   const soundscape = Boolean(settings.ambience && script.ambience);
   const total = script.pages.length + (settings.intro ? 1 : 0) + (soundscape ? 1 : 0) + (settings.effects ? 1 : 0) + 1;
   let done = 0;
-  const { startedAt, seconds } = story.progress ?? {};
-  const report = (step: string) => updateStory(storyId, { progress: { step, done, total, startedAt, seconds } });
+  const report = (step: string) => updateStory(storyId, { progress: { ...story.progress, step, done, total } });
   const counted = async <T>(work: Promise<T>): Promise<T> => {
     const value = await work;
     done++;
@@ -442,19 +521,16 @@ async function recordStory(storyId: string) {
       })
     : null;
 
+  // Every page is asked for at once, so the story holds its place in line for all of them (line.ts gives them their
+  // turns, the earliest story's first, a few at a time).
   const pages: { page: number; clip: Clip }[] = new Array(script.pages.length);
   const pageSounds: Promise<PlacedEffect[]>[] = new Array(script.pages.length);
-  let next = 0;
-  const worker = async () => {
-    while (next < script.pages.length) {
-      const i = next++;
-      const p = script.pages[i];
-      const clip = await counted(cachedPerformance(dir, pageClip(p.page), p.lines, script));
-      pages[i] = { page: p.page, clip };
-      if (cues) pageSounds[i] = pageEffects(dir, p, clip, cues);
-    }
-  };
-  const [intro, ambienceSound] = await Promise.all([welcome, ambience, Promise.all(Array.from({ length: config.voicesAtOnce }, worker))]);
+  const voicing = script.pages.map(async (p, i) => {
+    const clip = await counted(cachedPerformance(dir, pageClip(p.page), p.lines, script));
+    pages[i] = { page: p.page, clip };
+    if (cues) pageSounds[i] = pageEffects(dir, p, clip, cues);
+  });
+  const [intro, ambienceSound] = await Promise.all([welcome, ambience, Promise.all(voicing)]);
   const effects = cues ? (await counted(Promise.all(pageSounds))).flatMap((e) => e ?? []) : [];
 
   report("Binding the story together");
@@ -562,9 +638,12 @@ async function finishMix(
   parts: { pages: { page: number; clip: Clip }[]; intro: { before: Clip; after: Clip } | null; ambience: Float32Array | null; effects: PlacedEffect[] },
 ) {
   const story = getStoryById(storyId)!;
-  const { samples, timeline } = mixStory({ ...parts, chime: story.settings.chime });
-  const mp3 = encodeMp3(samples);
-  await fs.promises.writeFile(path.join(dir, "story.mp3"), mp3);
+  // One story is put together at a time, the earliest first, so each is done as soon as it can be.
+  const { timeline } = await turns.binding.run(async () => {
+    const mix = await mixStory({ ...parts, chime: story.settings.chime });
+    await fs.promises.writeFile(path.join(dir, "story.mp3"), await encodeMp3(mix.samples));
+    return mix;
+  });
   forgetVoiceCredits(); // the recording used some: the next look at the balance asks again
   void checkVoiceCreditLow().catch(() => undefined);
   updateStory(storyId, {

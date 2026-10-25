@@ -301,6 +301,29 @@ function anthropic(): Anthropic {
 
 export class StorytellerError extends Error {}
 
+/**
+ * A storyteller request, asked again while the storyteller is busy (the account's limit for the minute, or a moment's
+ * overload), at the pace Anthropic asks for, for up to about three minutes: when many families are making stories at
+ * once, a story waits its turn instead of failing. `waiting` hears each wait as it begins.
+ */
+export async function patiently<T>(ask: () => Promise<T>, waiting?: (seconds: number) => void, patience = 180): Promise<T> {
+  const until = Date.now() + patience * 1000;
+  for (let tries = 1; ; tries++) {
+    try {
+      return await ask();
+    } catch (err) {
+      const busy = err instanceof Anthropic.RateLimitError || (err instanceof Anthropic.APIError && (err.status === 529 || err.status === 503));
+      if (!busy) throw err;
+      const headers = (err as InstanceType<typeof Anthropic.APIError>).headers;
+      const asked = Number(headers?.get("retry-after-ms")) / 1000 || Number(headers?.get("retry-after"));
+      const seconds = Math.min(60, asked > 0 ? asked : 5 * tries);
+      if (Date.now() + seconds * 1000 > until) throw err;
+      waiting?.(seconds);
+      await new Promise((r) => setTimeout(r, seconds * 1000));
+    }
+  }
+}
+
 export interface WrittenStory {
   script: StoryScript;
   /** When the photos were out of order: which photo (1-based) belongs on each page, in reading order. */
@@ -321,40 +344,43 @@ export async function writeScript(req: StoryRequest, onProgress: WriteProgress):
   const voiceIds = [...new Set(req.voices.map((v) => v.voiceId))];
   onProgress(req.images.length ? "Studying the pictures" : "Dreaming up the story", 0, req.pageCount);
 
-  const stream = anthropic().beta.messages.stream({
-    model: config.storyModel,
-    max_tokens: 64000,
-    betas: ["server-side-fallback-2026-07-01"],
-    fallbacks: "default",
-    thinking: { type: "adaptive" },
-    output_config: {
-      effort: req.mode === "create" ? "high" : "medium",
-      format: { type: "json_schema", schema: jsonSchema(voiceIds, scriptExtras(req)) },
-    },
-    system: req.mode === "create" ? CREATE_SYSTEM : READ_SYSTEM,
-    messages: [{ role: "user", content: buildContent(req) }],
-  });
+  const write = async () => {
+    const stream = anthropic().beta.messages.stream({
+      model: config.storyModel,
+      max_tokens: 64000,
+      betas: ["server-side-fallback-2026-07-01"],
+      fallbacks: "default",
+      thinking: { type: "adaptive" },
+      output_config: {
+        effort: req.mode === "create" ? "high" : "medium",
+        format: { type: "json_schema", schema: jsonSchema(voiceIds, scriptExtras(req)) },
+      },
+      system: req.mode === "create" ? CREATE_SYSTEM : READ_SYSTEM,
+      messages: [{ role: "user", content: buildContent(req) }],
+    });
 
-  // Count pages as they stream in so the family can watch the story grow (and hand each over, when asked).
-  let text = "";
-  let pagesSeen = 0;
-  const watch = req.onPage ? watchPages(req, req.onPage) : null;
-  stream.on("text", (delta) => {
-    watch?.push(delta);
-    text += delta;
-    const seen = (text.match(/"picture"\s*:/g) ?? []).length;
-    if (seen !== pagesSeen) {
-      pagesSeen = seen;
-      onProgress(req.mode === "create" ? "Writing the pages" : "Reading the pages", Math.min(seen, req.pageCount), req.pageCount);
-    }
-  });
+    // Count pages as they stream in so the family can watch the story grow (and hand each over, when asked).
+    let text = "";
+    let pagesSeen = 0;
+    const watch = req.onPage ? watchPages(req, req.onPage) : null;
+    stream.on("text", (delta) => {
+      watch?.push(delta);
+      text += delta;
+      const seen = (text.match(/"picture"\s*:/g) ?? []).length;
+      if (seen !== pagesSeen) {
+        pagesSeen = seen;
+        onProgress(req.mode === "create" ? "Writing the pages" : "Reading the pages", Math.min(seen, req.pageCount), req.pageCount);
+      }
+    });
+    return stream.finalMessage();
+  };
 
   let message: Anthropic.Beta.BetaMessage;
   try {
-    message = await stream.finalMessage();
+    message = await patiently(write, () => onProgress("The storyteller is busy, so the story waits a moment", 0, req.pageCount));
   } catch (err) {
     if (err instanceof Anthropic.AuthenticationError) throw new StorytellerError("The Anthropic API key was not accepted.");
-    if (err instanceof Anthropic.RateLimitError) throw new StorytellerError("The storyteller is busy right now. Please try again in a minute.");
+    if (err instanceof Anthropic.RateLimitError) throw new StorytellerError("The storyteller is busy right now. Please try again in a few minutes.");
     if (err instanceof Anthropic.APIError) throw new StorytellerError(`The storyteller hit a snag (${err.status}). Please try again.`);
     throw err;
   }
@@ -566,15 +592,17 @@ export async function spotSoundEffects(script: StoryScript): Promise<{ cues: Sou
     .join("\n\n");
   let message: Anthropic.Beta.BetaMessage;
   try {
-    message = await anthropic().beta.messages.create({
-      model: config.storyModel,
-      max_tokens: 16000,
-      betas: ["server-side-fallback-2026-07-01"],
-      fallbacks: "default",
-      output_config: { effort: "low", format: { type: "json_schema", schema: SOUND_SCHEMA } },
-      system: SOUND_SYSTEM,
-      messages: [{ role: "user", content: `"${script.title}"\n\n${pages}` }],
-    });
+    message = await patiently(() =>
+      anthropic().beta.messages.create({
+        model: config.storyModel,
+        max_tokens: 16000,
+        betas: ["server-side-fallback-2026-07-01"],
+        fallbacks: "default",
+        output_config: { effort: "low", format: { type: "json_schema", schema: SOUND_SCHEMA } },
+        system: SOUND_SYSTEM,
+        messages: [{ role: "user", content: `"${script.title}"\n\n${pages}` }],
+      }),
+    );
   } catch (err) {
     if (err instanceof Anthropic.AuthenticationError) throw new StorytellerError("The Anthropic API key was not accepted.");
     if (err instanceof Anthropic.APIError) throw new StorytellerError(`The sound designer hit a snag (${err.status}). Please try again.`);
@@ -692,15 +720,17 @@ export async function planPictures(
     .join("\n\n");
   let message: Anthropic.Beta.BetaMessage;
   try {
-    message = await anthropic().beta.messages.create({
-      model: config.storyModel,
-      max_tokens: 16000,
-      betas: ["server-side-fallback-2026-07-01"],
-      fallbacks: "default",
-      output_config: { effort: "medium", format: { type: "json_schema", schema: ART_SCHEMA } },
-      system: ART_SYSTEM,
-      messages: [{ role: "user", content: text }],
-    });
+    message = await patiently(() =>
+      anthropic().beta.messages.create({
+        model: config.storyModel,
+        max_tokens: 16000,
+        betas: ["server-side-fallback-2026-07-01"],
+        fallbacks: "default",
+        output_config: { effort: "medium", format: { type: "json_schema", schema: ART_SCHEMA } },
+        system: ART_SYSTEM,
+        messages: [{ role: "user", content: text }],
+      }),
+    );
   } catch (err) {
     if (err instanceof Anthropic.AuthenticationError) throw new StorytellerError("The Anthropic API key was not accepted.");
     if (err instanceof Anthropic.RateLimitError) throw new StorytellerError("The storyteller is busy right now. Please try again in a minute.");
@@ -748,15 +778,17 @@ export async function readWordsFromPictures(images: StoryImage[]): Promise<{ tit
   content.push({ type: "text", text: images.length > 1 ? "Copy out the words in these pictures." : "Copy out the words in this picture." });
   let message: Anthropic.Beta.BetaMessage;
   try {
-    message = await anthropic().beta.messages.create({
-      model: config.storyModel,
-      max_tokens: 16000,
-      betas: ["server-side-fallback-2026-07-01"],
-      fallbacks: "default",
-      output_config: { effort: "medium", format: { type: "json_schema", schema: WORDS_SCHEMA } },
-      system: WORDS_SYSTEM,
-      messages: [{ role: "user", content }],
-    });
+    message = await patiently(() =>
+      anthropic().beta.messages.create({
+        model: config.storyModel,
+        max_tokens: 16000,
+        betas: ["server-side-fallback-2026-07-01"],
+        fallbacks: "default",
+        output_config: { effort: "medium", format: { type: "json_schema", schema: WORDS_SCHEMA } },
+        system: WORDS_SYSTEM,
+        messages: [{ role: "user", content }],
+      }),
+    );
   } catch (err) {
     if (err instanceof Anthropic.AuthenticationError) throw new StorytellerError("The Anthropic API key was not accepted.");
     if (err instanceof Anthropic.RateLimitError) throw new StorytellerError("The storyteller is busy right now. Please try again in a minute.");
@@ -798,26 +830,28 @@ const LOOK_SCHEMA = {
 export async function describeFromPhoto(image: StoryImage, character: { name: string; words: string }): Promise<{ look: string; cost: number }> {
   let message: Anthropic.Beta.BetaMessage;
   try {
-    message = await anthropic().beta.messages.create({
-      model: config.storyModel,
-      max_tokens: 4000,
-      betas: ["server-side-fallback-2026-07-01"],
-      fallbacks: "default",
-      output_config: { effort: "low", format: { type: "json_schema", schema: LOOK_SCHEMA } },
-      system: LOOK_SYSTEM,
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "image", source: { type: "base64", media_type: image.mediaType, data: image.data } },
-            {
-              type: "text",
-              text: `The character is called ${character.name}.${character.words.trim() ? ` The family's own words: ${character.words.trim()}` : ""}\n\nHow do they look?`,
-            },
-          ],
-        },
-      ],
-    });
+    message = await patiently(() =>
+      anthropic().beta.messages.create({
+        model: config.storyModel,
+        max_tokens: 4000,
+        betas: ["server-side-fallback-2026-07-01"],
+        fallbacks: "default",
+        output_config: { effort: "low", format: { type: "json_schema", schema: LOOK_SCHEMA } },
+        system: LOOK_SYSTEM,
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "image", source: { type: "base64", media_type: image.mediaType, data: image.data } },
+              {
+                type: "text",
+                text: `The character is called ${character.name}.${character.words.trim() ? ` The family's own words: ${character.words.trim()}` : ""}\n\nHow do they look?`,
+              },
+            ],
+          },
+        ],
+      }),
+    );
   } catch (err) {
     if (err instanceof Anthropic.AuthenticationError) throw new StorytellerError("The Anthropic API key was not accepted.");
     if (err instanceof Anthropic.RateLimitError) throw new StorytellerError("The storyteller is busy right now. Please try again in a minute.");

@@ -1,4 +1,4 @@
-import { apiCtx, HttpError, requireGrownup, route } from "@/lib/server/auth";
+import { apiCtx, HttpError, oneStoryAtATime, requireGrownup, route } from "@/lib/server/auth";
 import { getStory, updateStory } from "@/lib/server/db";
 import { canWriteStories } from "@/lib/server/config";
 import { isRunning, startWriting } from "@/lib/server/jobs";
@@ -19,6 +19,7 @@ export const POST = route(async (_req: Request, ctx: RouteContext<"/api/stories/
     return Response.json({ ok: true, resumed: "draft" });
   }
   if (!canWriteStories()) throw new HttpError(503, "The storyteller needs an Anthropic API key.", "no_storyteller");
+  oneStoryAtATime(c, id);
   startWriting(id);
   return Response.json({ ok: true });
 });

@@ -30,9 +30,9 @@ export function paceOf(work: Work): number {
 /** About how long some work will take, in seconds: its rule of thumb, at the pace it really goes here. */
 export const expectedSeconds = (work: Work, guess: number) => Math.round(guess * paceOf(work));
 
-/** Some work finished: keep how long it took (since `startedAt`), beside its rule of thumb. */
-export function noteWorkTime(work: Work, guess: number, startedAt: number) {
-  const took = (Date.now() - startedAt) / 1000;
+/** Some work finished: keep how long it took (since `startedAt`, less any `waited` in line), beside its rule of thumb. */
+export function noteWorkTime(work: Work, guess: number, startedAt: number, waited = 0) {
+  const took = (Date.now() - startedAt) / 1000 - waited;
   if (!(guess > 0) || !(took > 0)) return;
   try {
     saveWorkTime(work, guess, took);

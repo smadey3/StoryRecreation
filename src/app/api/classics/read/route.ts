@@ -1,4 +1,4 @@
-import { apiCtx, HttpError, readJson, requireGrownup, route } from "@/lib/server/auth";
+import { apiCtx, HttpError, oneStoryAtATime, readJson, requireGrownup, route } from "@/lib/server/auth";
 import { canWriteStories } from "@/lib/server/config";
 import { createBook, createStory, findBookBySource } from "@/lib/server/db";
 import { loadClassic } from "@/lib/server/classics";
@@ -14,6 +14,7 @@ export const POST = route(async (req: Request) => {
   const gid = Number(body.gutenbergId);
   const chapterIndex = Number(body.chapter ?? 0);
   if (!Number.isInteger(gid) || gid <= 0) throw new HttpError(400, "Pick a book first.");
+  oneStoryAtATime(ctx);
   const settings = sanitizeSettings({ ...(body.settings as object), source: "classic", classic: { gutenbergId: gid, chapter: chapterIndex } });
   if (settings.fullCast && !canWriteStories()) {
     throw new HttpError(503, "A full cast needs the storyteller (an Anthropic API key). Try a single reader instead.", "no_storyteller");

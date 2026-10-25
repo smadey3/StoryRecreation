@@ -261,19 +261,8 @@ export function db(): DatabaseSync {
     if (!bookColumns.includes("folder")) conn.exec("ALTER TABLE books ADD COLUMN folder TEXT");
     if (!bookColumns.includes("favorite")) conn.exec("ALTER TABLE books ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0");
     globalForDb.__storyhollowDb = conn;
-    recoverInterruptedJobs(conn);
   }
   return globalForDb.__storyhollowDb;
-}
-
-/** A restart kills in-flight jobs; mark them so the grown-ups can retry. */
-function recoverInterruptedJobs(conn: DatabaseSync) {
-  conn
-    .prepare(
-      `UPDATE stories SET status = 'error', error = 'The storyteller was interrupted. Press "Try again" to pick up where it left off.', updated_at = ?
-       WHERE status IN ('writing', 'recording')`,
-    )
-    .run(Date.now());
 }
 
 export const newId = () => randomUUID().replace(/-/g, "").slice(0, 16);
@@ -786,6 +775,19 @@ export function familyStoryArt(householdId: string): { id: string; title: string
       return art ? [{ id: r.id as string, title: r.title as string, art }] : [];
     },
   );
+}
+
+/** Stories being written or recorded, by what the database says (after a restart, none of them really is). */
+export function storiesBeingMade(): string[] {
+  return (db().prepare("SELECT id FROM stories WHERE status IN ('writing', 'recording') ORDER BY updated_at").all() as Row[]).map((r) => r.id as string);
+}
+
+/** The family's story being written or recorded just now, other than this one: a family makes one at a time. */
+export function storyBeingMade(householdId: string, exceptId = ""): { id: string; title: string } | null {
+  const r = db()
+    .prepare("SELECT id, title FROM stories WHERE household_id = ? AND status IN ('writing', 'recording') AND id <> ? ORDER BY updated_at DESC LIMIT 1")
+    .get(householdId, exceptId) as Row | undefined;
+  return r ? { id: r.id as string, title: r.title as string } : null;
 }
 
 /** Stories whose illustrator was at work, by what the database says (after a restart, nothing is). */

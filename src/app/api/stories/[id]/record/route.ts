@@ -1,4 +1,4 @@
-import { apiCtx, HttpError, requireGrownup, route } from "@/lib/server/auth";
+import { apiCtx, HttpError, oneStoryAtATime, requireGrownup, route } from "@/lib/server/auth";
 import { getStory } from "@/lib/server/db";
 import { canRecordStories } from "@/lib/server/config";
 import { isRunning, startRecording } from "@/lib/server/jobs";
@@ -14,6 +14,7 @@ export const POST = route(async (_req: Request, ctx: RouteContext<"/api/stories/
   if (!canRecordStories()) {
     throw new HttpError(503, "The voices need an ElevenLabs API key. A grown-up can add one in the settings.", "no_voices");
   }
+  oneStoryAtATime(c, id);
   startRecording(id);
   return Response.json({ ok: true });
 });

@@ -167,6 +167,8 @@ export interface StoryProgress {
   /** When the writing or recording started, and about how long it takes, in seconds: so the family knows how long to wait. */
   startedAt?: number;
   seconds?: number;
+  /** How many times a restart (an update, say) has picked it up again. */
+  resumed?: number;
 }
 
 export interface TimelineWord {

@@ -55,6 +55,22 @@ export interface PlacedEffect {
   samples: Float32Array;
 }
 
+/**
+ * Long work on a story's audio gives way every so often (each 12 ms or so), so the app keeps answering everyone else
+ * while a story is put together. Call it between blocks of work; it returns at once until a breath is due.
+ */
+function breather(): () => Promise<void> {
+  let since = performance.now();
+  return async () => {
+    if (performance.now() - since < 12) return;
+    await new Promise((r) => setImmediate(r));
+    since = performance.now();
+  };
+}
+
+/** Samples worked on between breaths. */
+const BLOCK = 1 << 16;
+
 export interface MixInput {
   pages: { page: number; clip: Clip }[];
   intro?: { before: Clip; after: Clip } | null;
@@ -69,18 +85,19 @@ const PAGE_GAP_NO_CHIME = 1.4;
 const TAIL = 2.5;
 const CHIME_PEAK = 0.34;
 
-/** Lay the story out on one timeline and render it. */
-export function mixStory(input: MixInput): { samples: Float32Array; timeline: StoryTimeline } {
+/** Lay the story out on one timeline and render it (giving way to the rest of the app as it goes). */
+export async function mixStory(input: MixInput): Promise<{ samples: Float32Array; timeline: StoryTimeline }> {
+  const breathe = breather();
   const chime = renderChime(input.chime.style, SAMPLE_RATE, CHIME_PEAK);
   const chimeLen = chime.length / SAMPLE_RATE;
   const parts: { at: number; samples: Float32Array }[] = [];
   const pages: TimelinePage[] = [];
   let t = LEAD_IN;
 
-  const speechGain = narrationGain([
-    ...input.pages.map((p) => p.clip.samples),
-    ...(input.intro ? [input.intro.before.samples, input.intro.after.samples] : []),
-  ]);
+  const speechGain = await narrationGain(
+    [...input.pages.map((p) => p.clip.samples), ...(input.intro ? [input.intro.before.samples, input.intro.after.samples] : [])],
+    breathe,
+  );
 
   const place = (samples: Float32Array, gain = 1) => {
     const scaled = gain === 1 ? samples : samples.map((s) => s * gain);
@@ -134,11 +151,14 @@ export function mixStory(input: MixInput): { samples: Float32Array; timeline: St
   const out = new Float32Array(total);
   for (const p of parts) {
     const offset = Math.round(p.at * SAMPLE_RATE);
-    for (let i = 0; i < p.samples.length && offset + i < total; i++) out[offset + i] += p.samples[i];
+    for (let from = 0; from < p.samples.length; from += BLOCK) {
+      for (let i = from; i < Math.min(from + BLOCK, p.samples.length) && offset + i < total; i++) out[offset + i] += p.samples[i];
+      await breathe();
+    }
   }
 
-  if (input.ambience && input.ambience.length > SAMPLE_RATE) layAmbience(out, input.ambience);
-  softLimit(out);
+  if (input.ambience && input.ambience.length > SAMPLE_RATE) await layAmbience(out, input.ambience, breathe);
+  await softLimit(out, breathe);
 
   const duration = total / SAMPLE_RATE;
   if (pages.length) pages[pages.length - 1].next = duration;
@@ -146,7 +166,7 @@ export function mixStory(input: MixInput): { samples: Float32Array; timeline: St
 }
 
 /** One gain for all narration so voices sit at a comfortable, even level. */
-function narrationGain(clips: Float32Array[]): number {
+async function narrationGain(clips: Float32Array[], breathe: () => Promise<void>): Promise<number> {
   let sumSq = 0;
   let n = 0;
   let peak = 0;
@@ -158,6 +178,7 @@ function narrationGain(clips: Float32Array[]): number {
         sumSq += c[i] * c[i];
         n++;
       }
+      if (i % BLOCK === 0) await breathe();
     }
   }
   if (!n || !peak) return 1;
@@ -167,7 +188,7 @@ function narrationGain(clips: Float32Array[]): number {
 }
 
 /** Loop a soundscape quietly under the story with long, gentle fades. */
-function layAmbience(out: Float32Array, loop: Float32Array) {
+async function layAmbience(out: Float32Array, loop: Float32Array, breathe: () => Promise<void>) {
   let sumSq = 0;
   for (let i = 0; i < loop.length; i++) sumSq += loop[i] * loop[i];
   const rms = Math.sqrt(sumSq / loop.length) || 1;
@@ -189,6 +210,7 @@ function layAmbience(out: Float32Array, loop: Float32Array) {
     const fromEnd = out.length - i;
     if (fromEnd < fadeOut) env = Math.min(env, fromEnd / fadeOut);
     out[i] += s * gain * env;
+    if (i % BLOCK === 0) await breathe();
   }
 }
 
@@ -219,26 +241,31 @@ function shapeEffect(samples: Float32Array): Float32Array {
   return out;
 }
 
-function softLimit(out: Float32Array) {
+async function softLimit(out: Float32Array, breathe: () => Promise<void>) {
   const knee = 0.9;
   for (let i = 0; i < out.length; i++) {
     const a = Math.abs(out[i]);
     if (a > knee) out[i] = Math.sign(out[i]) * (knee + (1 - knee) * Math.tanh((a - knee) / (1 - knee)));
+    if (i % BLOCK === 0) await breathe();
   }
 }
 
-export function encodeMp3(samples: Float32Array, kbps = 64): Buffer {
+/** The story as an MP3 (the slowest part of putting it together: it gives way to the rest of the app as it goes). */
+export async function encodeMp3(samples: Float32Array, kbps = 64): Promise<Buffer> {
+  const breathe = breather();
   const encoder = new Mp3Encoder(1, SAMPLE_RATE, kbps);
   const pcm = new Int16Array(samples.length);
   for (let i = 0; i < samples.length; i++) {
     const s = Math.max(-1, Math.min(1, samples[i]));
     pcm[i] = s < 0 ? s * 32768 : s * 32767;
+    if (i % BLOCK === 0) await breathe();
   }
   const chunks: Buffer[] = [];
   const block = 1152 * 8;
   for (let i = 0; i < pcm.length; i += block) {
     const buf = encoder.encodeBuffer(pcm.subarray(i, i + block));
     if (buf.length) chunks.push(Buffer.from(buf.buffer, buf.byteOffset, buf.byteLength));
+    await breathe();
   }
   const end = encoder.flush();
   if (end.length) chunks.push(Buffer.from(end.buffer, end.byteOffset, end.byteLength));

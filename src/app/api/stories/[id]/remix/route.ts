@@ -1,4 +1,4 @@
-import { apiCtx, HttpError, readJson, requireGrownup, route } from "@/lib/server/auth";
+import { apiCtx, HttpError, oneStoryAtATime, readJson, requireGrownup, route } from "@/lib/server/auth";
 import { getStory, updateStory } from "@/lib/server/db";
 import { isRunning, remixStory, startRecording } from "@/lib/server/jobs";
 import { sanitizeSettings } from "@/lib/server/settings";
@@ -12,6 +12,8 @@ export const POST = route(async (req: Request, ctx: RouteContext<"/api/stories/[
   const story = getStory(c.household.id, id);
   if (!story) throw new HttpError(404, "That story wasn't found.");
   if (isRunning(id)) throw new HttpError(409, "Please wait until the storyteller has finished.");
+  // (Before anything changes: new sounds may need the voices.)
+  oneStoryAtATime(c, id);
   const body = await readJson<{ chime?: StorySettings["chime"]; ambience?: boolean; effects?: boolean }>(req);
   const settings = sanitizeSettings({
     ...story.settings,
