@@ -217,7 +217,8 @@ a brand-new tale for the very same pictures.
 - **⬇ Download everything:** one ZIP with every story as an MP3 (filed by book), the family recordings (by
   person), the book photos, and a *Read me* page to browse, play and read every story's words. It's the
   family's copy to keep, whatever happens to the app or the subscriptions.
-- **📄 A PDF book to share:** on a finished story's page, *Make a PDF book to share* makes it a book of its own: a
+- **📄 A PDF book to share:** right under a finished story on its book's page, *📄 Share as a PDF* (beside *⬇️ Save
+  the MP3*), or *Make a PDF book to share* on the story's own page, makes it a book of its own: a
   cover, each page's picture big across the top with its words just beneath (what the characters say in quotation
   marks, as a printed book has it), and *The End*. A picture book's pages are made to fit its pictures, ten inches
   across (the pictures are drawn wider than they're tall) and only as tall as the words need, so there's little

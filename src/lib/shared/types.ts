@@ -331,6 +331,10 @@ export interface StoryCard {
   narrator?: VoiceLabel | null;
   /** The language it's told in, when it isn't English. */
   language?: StoryLanguage;
+  /** Its recording, once it's ready, to download. */
+  audioUrl: string | null;
+  /** Its PDF book, when it can have one: what it holds, and about how long it takes to make. */
+  pdf: { holds: "all" | "words"; seconds: number } | null;
 }
 
 /** A voice as the family knows it: "Professor Hoot" 🦉, "Gram T" 💛. */

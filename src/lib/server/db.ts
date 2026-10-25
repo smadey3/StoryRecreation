@@ -6,6 +6,7 @@ import { config } from "./config";
 import { DEFAULT_SHELVES, namedByItsStory } from "@/lib/shared/options";
 import { languageOf } from "@/lib/shared/languages";
 import { gutenbergCover } from "@/lib/shared/gutenberg";
+import { pdfOfferFor, pdfSeconds } from "@/lib/shared/pdf";
 import type {
   Book,
   BookKind,
@@ -817,10 +818,14 @@ const CARD_SELECT = `
          json_extract(s.art, '$.cover') AS art_cover,
          (SELECT json_extract(c.value, '$.voiceId') FROM json_each(s.script, '$.cast') c
           WHERE json_extract(c.value, '$.id') = 'narrator') AS narrator_voice_id,
-         COALESCE(json_extract(s.script, '$.language'), json_extract(s.settings, '$.language')) AS language
+         COALESCE(json_extract(s.script, '$.language'), json_extract(s.settings, '$.language')) AS language,
+         s.audio_path, s.updated_at, json_extract(s.settings, '$.source') AS source, json_array_length(s.script, '$.pages') AS script_pages
   FROM stories s JOIN books b ON b.id = s.book_id`;
 
 function toCard(r: Row): StoryCard {
+  const source = (r.source as StorySettings["source"] | null) ?? undefined;
+  const pages = Number(r.script_pages ?? 0);
+  const pdf = pdfOfferFor(source, pages);
   return {
     id: r.id as string,
     bookId: r.book_id as string,
@@ -839,6 +844,8 @@ function toCard(r: Row): StoryCard {
     createdAt: r.created_at as number,
     narratorVoiceId: (r.narrator_voice_id as string | null) ?? null,
     ...(languageOf(r.language) !== "en" ? { language: languageOf(r.language) } : {}),
+    audioUrl: r.audio_path ? `${fileUrl(r.audio_path as string)}?v=${r.updated_at}` : null,
+    pdf: pdf && { holds: pdf, seconds: pdfSeconds(pdf === "all" && (Boolean(r.art_cover) || source === "wild"), pages) },
   };
 }
 

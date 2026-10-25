@@ -1303,6 +1303,19 @@ a.choice {
   justify-items: center;
   gap: 8px;
 }
+/* Under a finished story on its book's page: share it as a PDF, or save its MP3. */
+.book-story {
+  display: grid;
+  gap: 8px;
+}
+.story-keep {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 8px;
+  text-align: center;
+}
 .story-card-wrap .story-meta {
   padding-right: 46px;
 }

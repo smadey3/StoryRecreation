@@ -17,7 +17,20 @@ function canShare(file: File): boolean {
  * A story as a PDF book, to send to friends and family or print: made when it's asked for, then shared straight from
  * the phone where the phone can (a second tap, since a share has to come from a tap), or saved like any download.
  */
-export function PdfShare({ storyId, title, note, seconds }: { storyId: string; title: string; note: string; seconds: number }) {
+export function PdfShare({
+  storyId,
+  title,
+  note,
+  seconds,
+  label = "📄 Make a PDF book to share",
+}: {
+  storyId: string;
+  title: string;
+  /** What's in it, beneath the button (left out where there's no room). */
+  note?: string;
+  seconds: number;
+  label?: string;
+}) {
   const [making, setMaking] = useState<number | null>(null);
   const [ready, setReady] = useState<{ file: File; url: string; shareable: boolean } | null>(null);
   const [saved, setSaved] = useState(false);
@@ -95,12 +108,14 @@ export function PdfShare({ storyId, title, note, seconds }: { storyId: string; t
         <>
           <div>
             <button type="button" className="btn btn-ghost btn-sm" onClick={make}>
-              📄 Make a PDF book to share
+              {label}
             </button>
           </div>
-          <p className="small faint" style={{ margin: 0 }}>
-            {note}
-          </p>
+          {note && (
+            <p className="small faint" style={{ margin: 0 }}>
+              {note}
+            </p>
+          )}
         </>
       )}
       {error && <p className="notice notice-error small">{error}</p>}

@@ -14,7 +14,7 @@ import { formatDuration, rebindSeconds } from "@/lib/shared/options";
 import { WaitLine } from "@/components/Waiting";
 import { PdfShare } from "@/components/PdfShare";
 import { formatMoney } from "@/lib/shared/art";
-import { pdfOffer } from "@/lib/shared/pdf";
+import { pdfOffer, pdfSeconds } from "@/lib/shared/pdf";
 import { PagePicture, Pictures } from "./Pictures";
 import type { AppStatus, Book, BookPage, ChimeSettings, DrawnBefore, Story, StoryScript, VoiceOption } from "@/lib/shared/types";
 
@@ -334,7 +334,7 @@ export function Studio({
               storyId={story.id}
               title={script?.title ?? story.title}
               note={pdfNote}
-              seconds={pictured ? Math.round(3 + (script?.pages.length ?? 6) * 0.4) : 2}
+              seconds={pdfSeconds(pictured, script?.pages.length ?? 6)}
             />
           )}
           <div className="parchment stack" style={{ textAlign: "left" }}>

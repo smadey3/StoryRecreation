@@ -9,6 +9,7 @@ import { BOOK_KINDS, DEFAULT_SHELVES, defaultSettings } from "@/lib/shared/optio
 import { LANGUAGES, languageOf } from "@/lib/shared/languages";
 import type { Book, BookPage, Profile, StoryCard, StorySettings } from "@/lib/shared/types";
 import { Plaque } from "@/components/Plaque";
+import { PdfShare } from "@/components/PdfShare";
 
 const folderHref = (name: string) => `/library?folder=${encodeURIComponent(name)}`;
 
@@ -189,7 +190,10 @@ export function BookView({
               <Plaque label={stories.length === 1 ? "Your story" : `Your ${stories.length} stories`} wide />
               <div className="story-list">
                 {stories.map((s) => (
-                  <StoryCardView key={s.id} story={s} inBook profileEmoji={s.profileId ? emojiOf.get(s.profileId) : undefined} />
+                  <div key={s.id} className="book-story">
+                    <StoryCardView story={s} inBook profileEmoji={s.profileId ? emojiOf.get(s.profileId) : undefined} />
+                    <StoryKeep story={s} />
+                  </div>
                 ))}
               </div>
             </div>
@@ -273,5 +277,20 @@ export function BookView({
       )}
 
     </>
+  );
+}
+
+/** A finished story to keep or share: as a PDF book (with its pictures, when it has them), and its recording as an MP3. */
+function StoryKeep({ story }: { story: StoryCard }) {
+  if (story.status !== "ready" || (!story.pdf && !story.audioUrl)) return null;
+  return (
+    <div className="story-keep">
+      {story.pdf && <PdfShare storyId={story.id} title={story.title} seconds={story.pdf.seconds} label="📄 Share as a PDF" />}
+      {story.audioUrl && (
+        <a className="btn btn-ghost btn-sm" href={`${story.audioUrl.split("?")[0]}?download=${encodeURIComponent(`${story.title}.mp3`)}`}>
+          ⬇️ Save the MP3
+        </a>
+      )}
+    </div>
   );
 }
