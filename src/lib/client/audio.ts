@@ -1,10 +1,13 @@
 import { Mp3Encoder } from "@breezystack/lamejs";
+import { soundOfVideo } from "./videoSound";
 
 // Family recordings arrive in every shape: an iPhone voicemail (.m4a), a
 // voice memo, the sound from a video, a recording made right here. The
 // browser opens them, and we keep one tidy mono MP3 that plays everywhere
 // and is just what the voice service wants to learn from. A video is opened
 // here on the phone for its sound alone: the video itself never leaves it.
+// Its sound track is taken out of it first (Safari won't open an iPhone's
+// .MOV for its sound), so only that is read, however big the video is.
 
 const RATE = 44100;
 const MAX_MS = 20 * 60 * 1000;
@@ -24,17 +27,26 @@ export async function prepareRecording(
   keep?: { fromMs: number; toMs: number },
 ): Promise<{ file: File; durationMs: number }> {
   const video = isVideo(blob);
-  if (blob.size > MAX_BYTES) {
-    throw new Error(
-      video
-        ? "That video is too big to open on a phone. Trim it to the part where they're speaking first (in Photos, tap Edit and drag the ends in), then add it again."
-        : "That recording is too big to open here. Trim it to the part you'd like to keep, then add it again.",
-    );
+  const tooLong = video
+    ? "That video is longer than 20 minutes. Trim it to the part where they're speaking (in Photos, tap Edit and drag the ends in), then add it again."
+    : "That recording is longer than 20 minutes. Trim it a little and try again.";
+  const decode = (b: Blob) => b.arrayBuffer().then((bytes) => new OfflineAudioContext(1, 1, RATE).decodeAudioData(bytes));
+  const sound = video ? await soundOfVideo(blob).catch(() => null) : null;
+  if (sound === "silent") throw new Error("That video has no sound in it. Choose one where you can hear them speaking.");
+  // Too long to be any use, and too much to open: said before it's opened. (A little over may trim down.)
+  if (sound && sound.durationMs > MAX_MS + 60_000) throw new Error(tooLong);
+  let decoded = sound ? await sound.read().then(decode).catch(() => null) : null;
+  if (!decoded) {
+    if (blob.size > MAX_BYTES) {
+      throw new Error(
+        video
+          ? "That video is too big to open on a phone. Trim it to the part where they're speaking first (in Photos, tap Edit and drag the ends in), then add it again."
+          : "That recording is too big to open here. Trim it to the part you'd like to keep, then add it again.",
+      );
+    }
+    decoded = await decode(blob).catch(() => null);
   }
-  let decoded: AudioBuffer;
-  try {
-    decoded = await new OfflineAudioContext(1, 1, RATE).decodeAudioData(await blob.arrayBuffer());
-  } catch {
+  if (!decoded) {
     throw new Error(
       video
         ? "The sound in that video couldn't be opened here. Try trimming it to the part where they're speaking, or save its sound (as a voice memo, say) and add that."
@@ -65,7 +77,7 @@ export async function prepareRecording(
     clip = clip.subarray(at(keep.fromMs), Math.max(at(keep.fromMs) + 1, at(keep.toMs)));
   }
   const durationMs = Math.round((clip.length / RATE) * 1000);
-  if (durationMs > MAX_MS) throw new Error("That recording is longer than 20 minutes. Trim it a little and try again.");
+  if (durationMs > MAX_MS) throw new Error(tooLong);
 
   // Even out the level so a quiet voicemail isn't a whisper (without blasting the hiss).
   const gain = Math.min(4, 0.89 / peak);

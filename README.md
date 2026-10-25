@@ -115,9 +115,10 @@ a brand-new tale for the very same pictures.
 - **Keepsakes, kept just as they are.** Upload a voicemail, a voice memo or a video, or record right in the app:
   Grandma's birthday message, your children reading at four. They're tidied into good MP3s in the browser (192 kbps,
   the quality ElevenLabs asks for to learn a voice) and stay private to your family.
-- **Videos give up their sound, and nothing else.** Pick a video from your photos: its sound is taken out right
-  there on the phone, and only that is sent and kept. The video itself never leaves the phone. Long ones are
-  welcome: up to 20 minutes each (and up to 400 MB), as many as you like.
+- **Videos give up their sound, and nothing else.** Pick a video from your photos (an iPhone's .MOV, or any MP4):
+  its sound is taken out right there on the phone, and only that is sent and kept. The video itself never leaves
+  the phone. Long ones are welcome: up to 20 minutes each, however big the video (from a Google Drive link, up to
+  400 MB), as many as you like.
 - **Or straight from a Google Drive link.** Paste the link to a video in Google Drive (shared with “Anyone with
   the link”): it comes straight from Google to the phone, never through Storyhollow, and only its sound is kept.
   It can be made private again afterwards. If the link isn't shared that way, or is a folder, it says what to do.
@@ -307,6 +308,10 @@ humming placeholder voices.
 - **Chimes** are synthesized in code (`src/lib/shared/chime.ts`), so the preview in the browser is exactly
   what gets mixed into the story.
 - **Mixing and MP3 encoding** are pure JavaScript (`src/lib/server/audio.ts`); no ffmpeg needed.
+- **A video's sound** is taken out in the browser (`src/lib/client/videoSound.ts`). Safari opens an MP4 or M4A for
+  its sound but not a QuickTime movie, which is what an iPhone records. So the movie's tables are read for where
+  its AAC sound is kept, just that is read from the file (a tenth of a megabyte of a 250 MB video), and it's packed,
+  untouched, as a plain .m4a for the browser to open. Any other video is opened whole, as before.
 - **Editing a page only re-records that page.** Recordings are cached by content, and changing the chime
   or the sounds re-binds the story without re-recording any voices.
 - **Pictures:** a separate Claude request reads a picture book's finished script and plans its pictures (each
@@ -359,6 +364,7 @@ src/app/play/        the player
 src/app/api/         auth, profiles, PIN, books, stories, voices, classics, files
 src/lib/server/      db (SQLite), auth, storyteller, performer, audio, jobs, classics, voices, offsite (backups), alerts, credits,
                      illustrator & art (picture books), prices & spending, pdf (PDF books)
+src/lib/client/      in the browser: recordings tidied into MP3s, a video's sound, Google Drive links, uploads
 src/lib/shared/      types, options & presets, personas, chime synthesis
 scripts/             start (for Railway), restore-backup
 tests/               unit tests and API integration tests (fake Claude, ElevenLabs, Google, S3 and Resend servers)
