@@ -37,7 +37,7 @@ export class BucketClient {
   /** The buckets this key can see, or none if it isn't allowed to list them. */
   async buckets(): Promise<string[]> {
     try {
-      const res = await this.aws.fetch(`${this.endpoint}/`, { method: "GET" });
+      const res = await this.request(`${this.endpoint}/`, { method: "GET" });
       if (!res.ok) return [];
       return [...(await res.text()).matchAll(/<Bucket>[\s\S]*?<Name>([\s\S]*?)<\/Name>/g)].map((m) => unescapeXml(m[1]));
     } catch {
@@ -60,10 +60,25 @@ export class BucketClient {
     return `${this.base}/${key.split("/").map(encodeURIComponent).join("/")}`;
   }
 
-  private async send(url: string, init: RequestInit, what: string): Promise<Response> {
+  /**
+   * A request, signed and then sent with its bytes themselves rather than as a signed Request: inside the app,
+   * Next.js's fetch sends a Request's body as a stream of unknown length, and Backblaze refuses an upload that doesn't
+   * say its length. Tried again (a few times, waiting longer each time) while the storage is busy.
+   */
+  private async request(url: string, init: { method: string; body?: Uint8Array<ArrayBuffer>; headers?: Record<string, string> }): Promise<Response> {
+    for (let attempt = 0; ; attempt++) {
+      const signed = await this.aws.sign(url, init);
+      const res = await fetch(signed.url, { method: signed.method, headers: signed.headers, body: init.body });
+      if ((res.status < 500 && res.status !== 429) || attempt >= 3) return res;
+      await res.body?.cancel();
+      await new Promise((resolve) => setTimeout(resolve, 500 * 2 ** attempt));
+    }
+  }
+
+  private async send(url: string, init: { method: string; body?: Uint8Array<ArrayBuffer>; headers?: Record<string, string> }, what: string): Promise<Response> {
     let res: Response;
     try {
-      res = await this.aws.fetch(url, init);
+      res = await this.request(url, init);
     } catch (err) {
       throw new BackupError(`The backup storage couldn't be reached (${err instanceof Error ? err.message : String(err)}).`);
     }

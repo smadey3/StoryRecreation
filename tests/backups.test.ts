@@ -41,6 +41,11 @@ before(async () => {
       if (bucket !== BUCKET) return res.writeHead(404).end("<Error><Code>NoSuchBucket</Code></Error>");
       const key = rest.map(decodeURIComponent).join("/");
       if (req.method === "PUT") {
+        // Like Backblaze, an upload has to say how big it is.
+        if (req.headers["content-length"] === undefined) {
+          res.writeHead(411, { "content-type": "application/xml" });
+          return res.end("<Error><Code>MissingContentLength</Code><Message>You must provide the Content-Length HTTP header.</Message></Error>");
+        }
         objects.set(key, Buffer.concat(chunks));
         return res.writeHead(200).end();
       }
