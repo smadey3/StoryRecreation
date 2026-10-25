@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useApi } from "@/components/Grownup";
 import { Spinner, WaitLine } from "@/components/Waiting";
-import { clock, isVideo, prepareRecording } from "@/lib/client/audio";
+import { clock, isVideo, MAX_MS, prepareRecording, TooLong } from "@/lib/client/audio";
 import { fetchFromDrive } from "@/lib/client/drive";
 import { keepAwake, sendTrouble, sentWords, upload } from "@/lib/client/upload";
 import { familyVoiceSeconds } from "@/lib/shared/options";
@@ -434,8 +434,12 @@ function KeepsakeAdder({
   // The screen stays on while recording, so reading the script doesn't let the phone lock and stop it.
   const awake = useRef<(() => void) | null>(null);
   // What it was made ready from (kept on the phone, to cut just part of it), and the part to keep, if not all of it.
-  const source = useRef<{ blob: Blob; name: string } | null>(null);
+  const source = useRef<{ blob: Blob; name: string; within?: { fromMs: number; toMs: number } } | null>(null);
   const [part, setPart] = useState<{ from: number; to: number } | null>(null);
+  // One longer than 20 minutes: all its sound, to listen to, and the part of it to make ready.
+  const [long, setLong] = useState<{ blob: Blob; name: string; durationMs: number; url: string } | null>(null);
+  const [within, setWithin] = useState<{ from: number; to: number }>({ from: 0, to: MAX_MS });
+  const longPreview = useRef<HTMLAudioElement>(null);
   const preview = useRef<HTMLAudioElement>(null);
   const stopAt = useRef<number | null>(null);
 
@@ -447,21 +451,37 @@ function KeepsakeAdder({
   useEffect(() => () => recording?.recorder.stream.getTracks().forEach((t) => t.stop()), [recording]);
   useEffect(() => () => awake.current?.(), []);
 
-  const prepare = async (blob: Blob, name: string) => {
+  const prepare = async (blob: Blob, name: string, chosen?: { from: number; to: number }) => {
     setError(null);
     // From a video, only the sound is taken, here on the phone: the video itself is never sent or kept.
-    const what = isVideo(blob) ? "Taking the sound from the video" : "Getting the recording ready";
+    const what = chosen ? "Taking that part" : isVideo(blob) ? "Taking the sound from the video" : "Getting the recording ready";
     setBusy(`${what}…`);
+    const forget = (old: { url: string } | null) => {
+      if (old) URL.revokeObjectURL(old.url);
+      return null;
+    };
     try {
-      const out = await prepareRecording(blob, name, (f) => setBusy(`${what} (${Math.round(f * 100)}%)…`));
-      source.current = { blob, name };
+      const part = chosen && { fromMs: chosen.from, toMs: chosen.to };
+      const out = await prepareRecording(blob, name, { onProgress: (f) => setBusy(`${what} (${Math.round(f * 100)}%)…`), within: part });
+      source.current = { blob, name, within: part };
       setPart(null);
+      setLong(forget);
       setReady((old) => {
-        if (old) URL.revokeObjectURL(old.url);
+        forget(old);
         return { ...out, url: URL.createObjectURL(out.file) };
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "That recording couldn't be opened.");
+      if (err instanceof TooLong) {
+        // Longer than can be kept: listen, and choose up to 20 minutes of it.
+        setReady(forget);
+        setLong((old) => {
+          forget(old);
+          return { blob, name, durationMs: err.durationMs, url: URL.createObjectURL(err.sound) };
+        });
+        setWithin({ from: 0, to: MAX_MS });
+      } else {
+        setError(err instanceof Error ? err.message : "That recording couldn't be opened.");
+      }
     } finally {
       setBusy(null);
     }
@@ -534,12 +554,18 @@ function KeepsakeAdder({
 
   // Just part of it: from where to where, and a listen to that part alone.
   const trimmed = Boolean(ready && part && (part.from > 0 || part.to < ready.durationMs));
-  const hearPart = () => {
-    const a = preview.current;
-    if (!a || !part) return;
-    a.currentTime = part.from / 1000;
-    stopAt.current = part.to / 1000;
+  const hear = (a: HTMLAudioElement | null, from: number, to: number) => {
+    if (!a) return;
+    a.currentTime = from / 1000;
+    stopAt.current = to / 1000;
     void a.play().catch(() => undefined);
+  };
+  const hearPart = () => part && hear(preview.current, part.from, part.to);
+  const stopAtEnd = (e: React.SyntheticEvent<HTMLAudioElement>) => {
+    if (stopAt.current !== null && e.currentTarget.currentTime >= stopAt.current) {
+      stopAt.current = null;
+      e.currentTarget.pause();
+    }
   };
 
   const save = async () => {
@@ -551,9 +577,10 @@ function KeepsakeAdder({
       let { file, durationMs } = ready;
       if (trimmed && part && source.current) {
         setBusy("Keeping just that part…");
-        ({ file, durationMs } = await prepareRecording(source.current.blob, source.current.name, (f) => setBusy(`Keeping just that part (${Math.round(f * 100)}%)…`), {
-          fromMs: part.from,
-          toMs: part.to,
+        ({ file, durationMs } = await prepareRecording(source.current.blob, source.current.name, {
+          onProgress: (f) => setBusy(`Keeping just that part (${Math.round(f * 100)}%)…`),
+          keep: { fromMs: part.from, toMs: part.to },
+          within: source.current.within,
         }));
       }
       setBusy("Saving the recording…");
@@ -670,7 +697,8 @@ function KeepsakeAdder({
         <div className="stack" style={{ ["--gap" as string]: "8px" }}>
           <p className="hint" style={{ margin: 0 }}>
             <b>🎬 A video:</b> pick it from your photos. Only the sound is kept, taken out right here on your phone: the video
-            itself is never sent or stored. Long ones are welcome, up to 20 minutes.
+            itself is never sent or stored. Long ones are welcome: up to 20 minutes is kept, and from a longer one you choose
+            which 20.
           </p>
           <p className="hint" style={{ margin: 0 }}>
             <b>📞 A voicemail on an iPhone:</b> open it in the Phone app, tap the share button, and choose <i>Save to Files</i>,
@@ -733,22 +761,35 @@ function KeepsakeAdder({
           </div>
         </div>
       )}
+      {long && !busy && (
+        <div className="stack" style={{ ["--gap" as string]: "6px" }}>
+          <span className="small muted">
+            {clock(long.durationMs)} of sound, and up to {clock(MAX_MS)} can be kept
+          </span>
+          <audio ref={longPreview} controls src={long.url} onTimeUpdate={stopAtEnd} />
+          <PartPicker
+            heading={`Choose up to ${MAX_MS / 60_000} minutes of it`}
+            note="Listen, then slide to the part where they're speaking. For a storytelling voice, a minute or two of them is all it needs: the part it learns from is chosen when it's made."
+            durationMs={long.durationMs}
+            part={within}
+            minMs={1000}
+            maxMs={MAX_MS}
+            onChange={setWithin}
+            onHear={() => hear(longPreview.current, within.from, within.to)}
+          />
+          <div>
+            <button className="btn btn-sm" onClick={() => void prepare(long.blob, long.name, within)}>
+              Use this part · {clock(within.to - within.from)}
+            </button>
+          </div>
+        </div>
+      )}
       {ready && !busy && (
         <div className="stack" style={{ ["--gap" as string]: "6px" }}>
           <span className="small muted">
             Ready to keep · {trimmed && part ? `${clock(part.to - part.from)} of ${clock(ready.durationMs)}` : clock(ready.durationMs)}
           </span>
-          <audio
-            ref={preview}
-            controls
-            src={ready.url}
-            onTimeUpdate={(e) => {
-              if (stopAt.current !== null && e.currentTarget.currentTime >= stopAt.current) {
-                stopAt.current = null;
-                e.currentTarget.pause();
-              }
-            }}
-          />
+          <audio ref={preview} controls src={ready.url} onTimeUpdate={stopAtEnd} />
           {part ? (
             <PartPicker
               heading="Keep just part of it"
@@ -793,6 +834,7 @@ function PartPicker({
   durationMs,
   part,
   minMs,
+  maxMs = Infinity,
   allLabel,
   onChange,
   onHear,
@@ -802,13 +844,15 @@ function PartPicker({
   note: string;
   durationMs: number;
   part: { from: number; to: number };
-  /** The shortest the part can be. */
+  /** The shortest the part can be, and the longest: moving one end past either takes the other end along. */
   minMs: number;
-  allLabel: string;
+  maxMs?: number;
+  allLabel?: string;
   onChange: (part: { from: number; to: number }) => void;
   onHear: () => void;
-  onAll: () => void;
+  onAll?: () => void;
 }) {
+  const clamp = (n: number, low: number, high: number) => Math.max(low, Math.min(n, high));
   return (
     <div className="keep-part stack" style={{ ["--gap" as string]: "6px" }}>
       <div className="small">
@@ -823,7 +867,10 @@ function PartPicker({
           max={durationMs}
           step={100}
           value={part.from}
-          onChange={(e) => onChange({ ...part, from: Math.max(0, Math.min(Number(e.target.value), part.to - minMs)) })}
+          onChange={(e) => {
+            const from = clamp(Number(e.target.value), 0, durationMs - minMs);
+            onChange({ from, to: clamp(part.to, from + minMs, Math.min(durationMs, from + maxMs)) });
+          }}
         />
       </label>
       <label className="keep-part-row small">
@@ -834,16 +881,21 @@ function PartPicker({
           max={durationMs}
           step={100}
           value={part.to}
-          onChange={(e) => onChange({ ...part, to: Math.min(durationMs, Math.max(Number(e.target.value), part.from + minMs)) })}
+          onChange={(e) => {
+            const to = clamp(Number(e.target.value), minMs, durationMs);
+            onChange({ from: clamp(part.from, Math.max(0, to - maxMs), to - minMs), to });
+          }}
         />
       </label>
       <div className="row" style={{ gap: 6 }}>
         <button type="button" className="btn btn-ghost btn-sm" onClick={onHear}>
           ▶ Hear just that part
         </button>
-        <button type="button" className="btn btn-quiet btn-sm" onClick={onAll}>
-          {allLabel}
-        </button>
+        {onAll && (
+          <button type="button" className="btn btn-quiet btn-sm" onClick={onAll}>
+            {allLabel}
+          </button>
+        )}
       </div>
     </div>
   );

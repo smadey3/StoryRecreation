@@ -1,7 +1,19 @@
 // The sound of a phone's video, taken out of it here on the phone. An iPhone records into a QuickTime movie (.MOV),
 // which Safari plays but won't open for its sound alone, and most of any video is its picture. So the boxes an MP4
 // or a MOV is made of are read for where its sound is kept, and just that is read from the file and packed as a
-// plain .m4a, which every browser opens. The picture is never read.
+// plain .m4a, which every browser opens. The picture is never read. (A voice memo or a voicemail saved as .m4a is
+// the same kind of file, so it's read the same way.) The file can be on the phone, or in Google Drive, read a
+// piece at a time.
+
+/** A file to read pieces of: one on the phone, or one far away. */
+export type Source = {
+  size: number;
+  /** The bytes from `from` up to (not including) `to`. */
+  read: (from: number, to: number) => Promise<ArrayBuffer>;
+  /** Pieces of sound closer together than this are read in one go (more, for a file far away). */
+  near?: number;
+};
+const onPhone = (file: Blob): Source => ({ size: file.size, read: (from, to) => file.slice(from, to).arrayBuffer() });
 
 /** Boxes a movie file can begin with. */
 const FIRST = new Set(["ftyp", "moov", "mdat", "wide", "free", "skip", "pnot"]);
@@ -31,9 +43,10 @@ const all = (v: DataView, box: Box, type: string) => [...boxes(v, box.body, box.
 const child = (v: DataView, box: Box | undefined, type: string): Box | undefined => (box ? all(v, box, type)[0] : undefined);
 
 /** A movie's sample tables, read without reading the rest of it. */
-async function moovOf(file: Blob): Promise<DataView | null> {
+async function moovOf(file: Source): Promise<DataView | null> {
   for (let at = 0; at + 8 <= file.size; ) {
-    const head = new DataView(await file.slice(at, at + 16).arrayBuffer());
+    const head = new DataView(await file.read(at, Math.min(at + 16, file.size)));
+    if (head.byteLength < 8) return null;
     let size = head.getUint32(0);
     const type = String.fromCharCode(head.getUint8(4), head.getUint8(5), head.getUint8(6), head.getUint8(7));
     if (at === 0 && !FIRST.has(type)) return null; // not a movie
@@ -44,7 +57,7 @@ async function moovOf(file: Blob): Promise<DataView | null> {
       body = 16;
     } else if (size === 0) size = file.size - at;
     if (size < body) return null;
-    if (type === "moov") return size > MAX_MOOV || at + size > file.size ? null : new DataView(await file.slice(at, at + size).arrayBuffer());
+    if (type === "moov") return size > MAX_MOOV || at + size > file.size ? null : new DataView(await file.read(at, at + size));
     at += size;
   }
   return null;
@@ -101,25 +114,47 @@ function esdsIn(v: DataView, start: number, end: number): Box | undefined {
   }
 }
 
+type Run = { count: number; delta: number };
+
 type Sound = {
   enabled: boolean;
   timescale: number;
   esds: Box;
   rate: number;
   channels: number;
-  /** How long each sample plays, as runs of (samples, ticks each): copied as it is. */
-  timing: Uint8Array;
-  sizes: number[];
-  chunks: { offset: number; size: number }[];
+  /** How long each sample plays: runs of samples, each so many ticks long. */
+  timing: Run[];
+  /** Where each sample is in the file, and how big. */
+  offsets: Float64Array;
+  sizes: Uint32Array;
 };
 
-/** How long the samples play for, in the track's ticks. */
-function ticks(timing: Uint8Array): number {
-  const v = new DataView(timing.buffer, timing.byteOffset, timing.byteLength);
-  let n = 0;
-  for (let i = 0; i + 8 <= timing.length; i += 8) n += v.getUint32(i) * v.getUint32(i + 4);
-  return n;
+/** The samples that start from `from` up to `to` (in ticks). */
+function samplesWithin(timing: Run[], count: number, from: number, to: number): [number, number] {
+  let first = count;
+  let tick = 0;
+  let i = 0;
+  for (const run of timing) {
+    for (let k = 0; k < run.count && i < count; k++, i++, tick += run.delta) {
+      if (first === count && tick >= from) first = i;
+      if (tick >= to) return [Math.min(first, i), i];
+    }
+  }
+  return [first, count];
 }
+
+/** The timing of samples `first` up to `last`, as runs. */
+function timingOf(timing: Run[], first: number, last: number): Run[] {
+  const out: Run[] = [];
+  let i = 0;
+  for (const run of timing) {
+    const count = Math.min(i + run.count, last) - Math.max(i, first);
+    if (count > 0) out.push({ count, delta: run.delta });
+    i += run.count;
+  }
+  return out;
+}
+const ticks = (timing: Run[]) => timing.reduce((n, run) => n + run.count * run.delta, 0);
 
 /**
  * A sound track kept as AAC, and where in the file its sound is. `"sound"` if it's some other sound, or its tables
@@ -152,9 +187,9 @@ function aacTrack(v: DataView, trak: Box): Sound | null | "sound" {
   const sizeEach = v.getUint32(stsz.body + 4);
   const count = v.getUint32(stsz.body + 8);
   if (!count || (!sizeEach && stsz.body + 12 + count * 4 > stsz.end)) return "sound";
-  const sizes = Array.from({ length: count }, (_, i) => sizeEach || v.getUint32(stsz.body + 12 + i * 4));
+  const sizes = Uint32Array.from({ length: count }, (_, i) => sizeEach || v.getUint32(stsz.body + 12 + i * 4));
   const wide = stco.type === "co64";
-  const offsets = Array.from({ length: Math.min(v.getUint32(stco.body + 4), (stco.end - stco.body - 8) / (wide ? 8 : 4)) }, (_, i) =>
+  const chunks = Array.from({ length: Math.min(v.getUint32(stco.body + 4), (stco.end - stco.body - 8) / (wide ? 8 : 4)) }, (_, i) =>
     wide ? Number(v.getBigUint64(stco.body + 8 + i * 8)) : v.getUint32(stco.body + 8 + i * 4),
   );
   const runs = Array.from({ length: Math.min(v.getUint32(stsc.body + 4), (stsc.end - stsc.body - 8) / 12) }, (_, i) => ({
@@ -163,27 +198,33 @@ function aacTrack(v: DataView, trak: Box): Sound | null | "sound" {
     description: v.getUint32(stsc.body + 16 + i * 12),
   }));
   // Each chunk is a run of samples, one after another in the file.
-  const chunks: Sound["chunks"] = [];
+  const offsets = new Float64Array(count);
   let sample = 0;
   runs.forEach((run, r) => {
-    const last = r + 1 < runs.length ? runs[r + 1].first - 1 : offsets.length;
-    for (let c = run.first; c <= last && c <= offsets.length && sample < count; c++) {
-      let size = 0;
-      for (let k = 0; k < run.each && sample < count; k++) size += sizes[sample++];
-      chunks.push({ offset: offsets[c - 1], size });
+    const last = r + 1 < runs.length ? runs[r + 1].first - 1 : chunks.length;
+    for (let c = run.first; c <= last && c <= chunks.length && sample < count; c++) {
+      let at = chunks[c - 1];
+      for (let k = 0; k < run.each && sample < count; k++) {
+        offsets[sample] = at;
+        at += sizes[sample++];
+      }
     }
   });
   if (sample < count || runs.some((run) => run.description !== 1)) return "sound";
+  const timing = Array.from({ length: Math.min(v.getUint32(stts.body + 4), (stts.end - stts.body - 8) / 8) }, (_, i) => ({
+    count: v.getUint32(stts.body + 8 + i * 8),
+    delta: v.getUint32(stts.body + 12 + i * 8),
+  }));
   const tkhd = child(v, trak, "tkhd");
   return {
     enabled: !tkhd || Boolean(v.getUint32(tkhd.body) & 1),
-    timescale: v.getUint32(mdhd.body + (v.getUint8(mdhd.body) === 1 ? 20 : 12)),
+    timescale: v.getUint32(mdhd.body + (v.getUint8(mdhd.body) === 1 ? 20 : 12)) || 1,
     esds,
     rate: aac.rate,
     channels: aac.channels || v.getUint16(entry.body + 16) || 2,
-    timing: new Uint8Array(v.buffer, v.byteOffset + stts.body + 8, Math.min(v.getUint32(stts.body + 4) * 8, stts.end - stts.body - 8)),
+    timing,
+    offsets,
     sizes,
-    chunks,
   };
 }
 
@@ -213,9 +254,9 @@ function box(type: string, ...parts: Uint8Array[]): Uint8Array<ArrayBuffer> {
 }
 const MATRIX = u32([0x10000, 0, 0, 0, 0x10000, 0, 0, 0, 0x40000000]);
 
-/** The track's sound as a .m4a of its own: the same AAC, untouched, in one chunk after the tables. */
-function m4a(v: DataView, sound: Sound, data: Uint8Array<ArrayBuffer>): Blob {
-  const duration = ticks(sound.timing);
+/** Sound as a .m4a of its own: the same AAC, untouched, in one chunk after the tables. */
+function m4a(v: DataView, sound: Sound, timing: Run[], sizes: Uint32Array, data: Uint8Array<ArrayBuffer>): Blob {
+  const duration = ticks(timing);
   const esds = new Uint8Array(v.buffer, v.byteOffset + sound.esds.start, sound.esds.end - sound.esds.start);
   const ftyp = box("ftyp", text("M4A "), u32([0]), text("M4A isommp42"));
   const moov = box(
@@ -235,9 +276,9 @@ function m4a(v: DataView, sound: Sound, data: Uint8Array<ArrayBuffer>): Blob {
           box(
             "stbl",
             box("stsd", u32([0, 1]), box("mp4a", u16([0, 0, 0, 1]), u32([0, 0]), u16([sound.channels, 16, 0, 0]), u32([Math.min(sound.rate, 0xffff) * 0x10000]), esds)),
-            box("stts", u32([0, Math.floor(sound.timing.length / 8)]), sound.timing),
-            box("stsc", u32([0, 1, 1, sound.sizes.length, 1])),
-            box("stsz", u32([0, 0, sound.sizes.length]), u32(sound.sizes)),
+            box("stts", u32([0, timing.length]), u32(timing.flatMap((run) => [run.count, run.delta]))),
+            box("stsc", u32([0, 1, 1, sizes.length, 1])),
+            box("stsz", u32([0, 0, sizes.length]), u32(sizes)),
             // Last of all, so its one offset is the last four bytes of the moov box, set just below.
             box("stco", u32([0, 1, 0])),
           ),
@@ -249,15 +290,19 @@ function m4a(v: DataView, sound: Sound, data: Uint8Array<ArrayBuffer>): Blob {
   return new Blob([ftyp, moov, u32([data.length + 8]), text("mdat"), data], { type: "audio/mp4" });
 }
 
-/** Chunks closer than this in the file are read in one go. */
-const NEAR = 256 * 1024;
+/** A movie's sound, found: how long it is, and `read` for it (or for just part of it) as an .m4a. */
+export type FoundSound = {
+  durationMs: number;
+  read: (part?: { fromMs: number; toMs: number }, onProgress?: (fraction: number) => void) => Promise<Blob>;
+};
 
 /**
- * How long the sound of an MP4 or a MOV is, and `read` for it as an .m4a; `"silent"` if the video has no sound at
- * all; null if it isn't a movie, or its sound isn't AAC, so it's left to the browser to open whole.
+ * The AAC sound of an MP4, a MOV or an M4A; `"silent"` if it has no sound at all; null if it isn't one of those, or
+ * its sound isn't AAC, so it's left to the browser to open whole.
  */
-export async function soundOfVideo(file: Blob): Promise<{ durationMs: number; read: () => Promise<Blob> } | "silent" | null> {
-  const v = await moovOf(file);
+export async function mp4Sound(file: Blob | Source): Promise<FoundSound | "silent" | null> {
+  const source = file instanceof Blob ? onPhone(file) : file;
+  const v = await moovOf(source);
   const moov = v && [...boxes(v, 0, v.byteLength)][0];
   if (!v || !moov) return null;
   const tracks = all(v, moov, "trak").map((trak) => aacTrack(v, trak));
@@ -265,35 +310,49 @@ export async function soundOfVideo(file: Blob): Promise<{ durationMs: number; re
   const sounds = tracks.filter((t): t is Sound => typeof t === "object" && t !== null);
   // An iPhone 16 keeps a spatial copy of its sound too, in a format all its own: the AAC one is what plays.
   const sound = sounds.find((s) => s.enabled) ?? sounds[0];
-  if (!sound || sound.chunks.some((c) => c.offset + c.size > file.size)) return null;
-  return { durationMs: Math.round((ticks(sound.timing) / (sound.timescale || 1)) * 1000), read: () => read(file, v, sound) };
+  if (!sound || sound.offsets.some((at, i) => at + sound.sizes[i] > source.size)) return null;
+  return {
+    durationMs: Math.round((ticks(sound.timing) / sound.timescale) * 1000),
+    read: (part, onProgress) => read(source, v, sound, part, onProgress),
+  };
 }
 
-/** The track's sound read from the file: where each chunk goes, one after another, read a few at a time. */
-async function read(file: Blob, v: DataView, sound: Sound): Promise<Blob> {
-  const { chunks } = sound;
-  const place: number[] = [];
+/** The sound read from the file (all of it, or the samples in a part), a few pieces at a time. */
+async function read(file: Source, v: DataView, sound: Sound, part?: { fromMs: number; toMs: number }, onProgress?: (fraction: number) => void): Promise<Blob> {
+  const { offsets, sizes, timescale } = sound;
+  const [first, last] = part
+    ? samplesWithin(sound.timing, sizes.length, (part.fromMs / 1000) * timescale, (part.toMs / 1000) * timescale)
+    : [0, sizes.length];
+  if (last <= first) throw new Error("There's no sound in that part.");
+  // Where each sample goes, one after another; samples close together in the file are read in one go.
+  const place = new Float64Array(last - first);
   let total = 0;
-  for (const c of chunks) {
-    place.push(total);
-    total += c.size;
+  for (let i = first; i < last; i++) {
+    place[i - first] = total;
+    total += sizes[i];
   }
+  const near = file.near ?? 256 * 1024;
   const spans: { first: number; last: number }[] = [];
-  for (let i = 0; i < chunks.length; i++) {
+  for (let i = first; i < last; i++) {
     const span = spans.at(-1);
-    const gap = span ? chunks[i].offset - (chunks[i - 1].offset + chunks[i - 1].size) : -1;
-    if (span && gap >= 0 && gap <= NEAR) span.last = i;
+    const gap = span ? offsets[i] - (offsets[i - 1] + sizes[i - 1]) : -1;
+    if (span && gap >= 0 && gap <= near) span.last = i;
     else spans.push({ first: i, last: i });
   }
   const data = new Uint8Array(total);
+  let got = 0;
   for (let s = 0; s < spans.length; s += 8) {
     await Promise.all(
-      spans.slice(s, s + 8).map(async ({ first, last }) => {
-        const from = chunks[first].offset;
-        const bytes = new Uint8Array(await file.slice(from, chunks[last].offset + chunks[last].size).arrayBuffer());
-        for (let k = first; k <= last; k++) data.set(bytes.subarray(chunks[k].offset - from, chunks[k].offset - from + chunks[k].size), place[k]);
+      spans.slice(s, s + 8).map(async (span) => {
+        const from = offsets[span.first];
+        const bytes = new Uint8Array(await file.read(from, offsets[span.last] + sizes[span.last]));
+        for (let i = span.first; i <= span.last; i++) {
+          data.set(bytes.subarray(offsets[i] - from, offsets[i] - from + sizes[i]), place[i - first]);
+          got += sizes[i];
+        }
       }),
     );
+    onProgress?.(got / total);
   }
-  return m4a(v, sound, data);
+  return m4a(v, sound, timingOf(sound.timing, first, last), sizes.subarray(first, last), data);
 }

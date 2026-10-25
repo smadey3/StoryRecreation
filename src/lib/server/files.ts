@@ -56,7 +56,8 @@ export async function saveImageBytes(householdId: string, folder: string, bytes:
   return rel;
 }
 
-export const MAX_AUDIO_BYTES = 20 * 1024 * 1024;
+/** Twenty minutes of a recording at 192 kbps (29 MB), with room to spare. */
+export const MAX_AUDIO_BYTES = 32 * 1024 * 1024;
 
 /** Save an uploaded recording (the browser has already turned it into an MP3). */
 export async function saveAudio(householdId: string, folder: string, file: File): Promise<string> {

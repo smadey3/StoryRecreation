@@ -117,10 +117,11 @@ a brand-new tale for the very same pictures.
   the quality ElevenLabs asks for to learn a voice) and stay private to your family.
 - **Videos give up their sound, and nothing else.** Pick a video from your photos (an iPhone's .MOV, or any MP4):
   its sound is taken out right there on the phone, and only that is sent and kept. The video itself never leaves
-  the phone. Long ones are welcome: up to 20 minutes each, however big the video (from a Google Drive link, up to
-  400 MB), as many as you like.
+  the phone. Long ones are welcome: up to 20 minutes each, however big the video, as many as you like. From a
+  longer one (a video or a voice memo), you listen and slide to the 20 minutes or less to keep.
 - **Or straight from a Google Drive link.** Paste the link to a video in Google Drive (shared with “Anyone with
-  the link”): it comes straight from Google to the phone, never through Storyhollow, and only its sound is kept.
+  the link”): its sound comes straight from Google to the phone, never through Storyhollow, and only that is
+  fetched and kept, so a big video is no trouble.
   It can be made private again afterwards. If the link isn't shared that way, or is a folder, it says what to do.
   (This needs a Google key, set up once: see *Videos from Google Drive* below.)
 - **🎙️ Record now, with a script made for it.** For a storytelling voice, *Record now* shows a two-minute bedtime
@@ -311,7 +312,10 @@ humming placeholder voices.
 - **A video's sound** is taken out in the browser (`src/lib/client/videoSound.ts`). Safari opens an MP4 or M4A for
   its sound but not a QuickTime movie, which is what an iPhone records. So the movie's tables are read for where
   its AAC sound is kept, just that is read from the file (a tenth of a megabyte of a 250 MB video), and it's packed,
-  untouched, as a plain .m4a for the browser to open. Any other video is opened whole, as before.
+  untouched, as a plain .m4a for the browser to open. A voice memo or voicemail saved as .m4a is read the same way.
+  From one longer than 20 minutes, only the part the family chooses is opened (a phone runs short of room opening
+  much more), and from a Drive link the same pieces are fetched with ranged requests, falling back to the whole
+  file (up to 400 MB) if Google won't send pieces. Any other kind of file is opened whole, as before.
 - **Editing a page only re-records that page.** Recordings are cached by content, and changing the chime
   or the sounds re-binds the story without re-recording any voices.
 - **Pictures:** a separate Claude request reads a picture book's finished script and plans its pictures (each
