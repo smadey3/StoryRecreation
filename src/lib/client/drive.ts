@@ -65,7 +65,9 @@ export async function fetchFromDrive(link: string, key: string, onProgress?: (fr
   if (size) {
     const pieces: Source = {
       size,
-      near: 1024 * 1024,
+      // Only the sound: the picture between its pieces is passed over, however little of it there is.
+      near: 64 * 1024,
+      together: 12,
       read: async (from, to) => {
         const res = await ask("alt=media", { Range: `bytes=${from}-${to - 1}` });
         if (res.status !== 206) {

@@ -478,7 +478,8 @@ function KeepsakeAdder({
           forget(old);
           return { blob, name, durationMs: err.durationMs, url: URL.createObjectURL(err.sound) };
         });
-        setWithin({ from: 0, to: MAX_MS });
+        // Three minutes to begin with, the most a voice learns from: slide it to where they're speaking.
+        setWithin({ from: 0, to: Math.min(err.durationMs, BEST_MS) });
       } else {
         setError(err instanceof Error ? err.message : "That recording couldn't be opened.");
       }
@@ -697,8 +698,7 @@ function KeepsakeAdder({
         <div className="stack" style={{ ["--gap" as string]: "8px" }}>
           <p className="hint" style={{ margin: 0 }}>
             <b>🎬 A video:</b> pick it from your photos. Only the sound is kept, taken out right here on your phone: the video
-            itself is never sent or stored. Long ones are welcome: up to 20 minutes is kept, and from a longer one you choose
-            which 20.
+            itself is never sent or stored. A long one is fine: you choose the part to keep.
           </p>
           <p className="hint" style={{ margin: 0 }}>
             <b>📞 A voicemail on an iPhone:</b> open it in the Phone app, tap the share button, and choose <i>Save to Files</i>,
@@ -763,17 +763,16 @@ function KeepsakeAdder({
       )}
       {long && !busy && (
         <div className="stack" style={{ ["--gap" as string]: "6px" }}>
-          <span className="small muted">
-            {clock(long.durationMs)} of sound, and up to {clock(MAX_MS)} can be kept
-          </span>
+          <span className="small muted">{clock(long.durationMs)} of sound</span>
           <audio ref={longPreview} controls src={long.url} onTimeUpdate={stopAtEnd} />
           <PartPicker
-            heading={`Choose up to ${MAX_MS / 60_000} minutes of it`}
-            note="Listen, then slide to the part where they're speaking. For a storytelling voice, a minute or two of them is all it needs: the part it learns from is chosen when it's made."
+            heading="Choose the part to keep"
+            note={`Slide it to where they're speaking, and listen. A minute to three of them speaking clearly is all a voice needs, and only that part is kept (make it longer, up to ${MAX_MS / 60_000} minutes, to keep more of it).`}
             durationMs={long.durationMs}
             part={within}
             minMs={1000}
             maxMs={MAX_MS}
+            shift
             onChange={setWithin}
             onHear={() => hear(longPreview.current, within.from, within.to)}
           />
@@ -835,6 +834,7 @@ function PartPicker({
   part,
   minMs,
   maxMs = Infinity,
+  shift = false,
   allLabel,
   onChange,
   onHear,
@@ -847,6 +847,8 @@ function PartPicker({
   /** The shortest the part can be, and the longest: moving one end past either takes the other end along. */
   minMs: number;
   maxMs?: number;
+  /** Moving the start moves the whole part along, the same length: for finding a stretch in a long one. */
+  shift?: boolean;
   allLabel?: string;
   onChange: (part: { from: number; to: number }) => void;
   onHear: () => void;
@@ -868,6 +870,10 @@ function PartPicker({
           step={100}
           value={part.from}
           onChange={(e) => {
+            if (shift) {
+              const from = clamp(Number(e.target.value), 0, durationMs - (part.to - part.from));
+              return onChange({ from, to: from + part.to - part.from });
+            }
             const from = clamp(Number(e.target.value), 0, durationMs - minMs);
             onChange({ from, to: clamp(part.to, from + minMs, Math.min(durationMs, from + maxMs)) });
           }}

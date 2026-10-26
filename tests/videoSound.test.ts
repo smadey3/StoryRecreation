@@ -115,6 +115,19 @@ test("a file far away is read a piece at a time: its tables and its sound, never
   assert.ok(fetched <= moov + sounds + 16 * 4, `${fetched} bytes asked for, of ${bytes.length}`);
 });
 
+test("however close together its pieces of sound, a file is never read more than a little at a time", async () => {
+  // As an iPhone keeps them: a little sound, then the picture, which a phone can't hold all of at once.
+  const bytes = bytesOf("iphone.mov");
+  const asked: number[] = [];
+  const far: Source = { size: bytes.length, near: Infinity, most: 2000, read: async (from, to) => (asked.push(to - from), bytes.buffer.slice(bytes.byteOffset + from, bytes.byteOffset + to)) };
+  const found = await mp4Sound(far);
+  assert.ok(found && found !== "silent");
+  asked.length = 0;
+  const sound = Buffer.from(await (await found.read()).arrayBuffer());
+  assert.ok(asked.length > 1 && Math.max(...asked) <= 2000, `read ${asked.join(", ")} bytes at a time`);
+  assert.deepEqual(top(sound).get("mdat"), top(bytesOf("iphone-sound.m4a")).get("mdat"));
+});
+
 test("longer than 20 minutes: all its sound to choose from, then just the part chosen is opened", async (t) => {
   // A second of sound whose pieces each say they last 31¼ seconds: 25 minutes, as far as its tables go.
   const long = Buffer.from(bytesOf("iphone-sound.m4a"));
@@ -140,9 +153,46 @@ test("longer than 20 minutes: all its sound to choose from, then just the part c
   assert.equal(err.sound.type, "audio/mp4");
   assert.equal(given.length, 0, "nothing opened before a part is chosen");
 
-  const out = await prepareRecording(memo, "Grandpa", { within: { fromMs: 60_000, toMs: 60_000 + 20 * 60_000 } });
+  const out = await prepareRecording(memo, "Grandpa", { within: { fromMs: 60_000, toMs: 120_000 } });
   assert.equal(out.file.type, "audio/mpeg");
+  assert.equal(given.length, 1, "a minute is opened in one piece");
   const opened = await mp4Sound(given[0]);
   assert.ok(opened && opened !== "silent");
-  assert.ok(Math.abs(opened.durationMs - 20 * 60_000) <= 31_250, `opened ${opened.durationMs} ms of it`);
+  // the minute, from the start of its first sample, and the few samples before it that a piece opens from
+  assert.ok(opened.durationMs >= 60_000 && opened.durationMs <= 60_000 + 4 * 31_250, `opened ${opened.durationMs} ms of it`);
+});
+
+test("opened a piece at a time, the sound is just as it is opened whole, however the decoder starts", { skip: !ffmpeg && "ffmpeg isn't installed here" }, async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "storyhollow-pieces-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  // Eight seconds of a voice-like warble in stereo, as an iPhone records it: AAC at 48 kHz.
+  const file = path.join(dir, "warble.m4a");
+  execFileSync("ffmpeg", ["-v", "error", "-f", "lavfi", "-i", "sine=frequency=220:sample_rate=48000:duration=8,vibrato=f=5:d=0.5", "-ac", "2", "-c:a", "aac", "-b:a", "96k", file]);
+  const found = await mp4Sound(new Blob([fs.readFileSync(file)]));
+  assert.ok(found && found !== "silent");
+  let n = 0;
+  // ffmpeg as the decoder: every sample it's given comes out. Some decoders leave out the 2112 an encoder begins with.
+  const decoder = (leaveOut: number) => async (m4a: Blob, rate: number) => {
+    const piece = path.join(dir, `piece-${n++}.m4a`);
+    fs.writeFileSync(piece, Buffer.from(await m4a.arrayBuffer()));
+    const raw = execFileSync("ffmpeg", ["-v", "error", "-i", piece, "-f", "f32le", "-ar", String(rate), "-ac", "2", "-"], { maxBuffer: 64 * 1024 * 1024 });
+    const all = new Float32Array(raw.buffer, raw.byteOffset, raw.length / 4);
+    const length = all.length / 2 - leaveOut;
+    const channels = [0, 1].map((c) => Float32Array.from({ length }, (_, i) => all[(i + leaveOut) * 2 + c]));
+    return { length, numberOfChannels: 2, getChannelData: (c: number) => channels[c] };
+  };
+  for (const leaveOut of [0, 2112]) {
+    const whole = await found.open({ decode: decoder(leaveOut), pieceMs: 60_000 });
+    const pieces = await found.open({ decode: decoder(leaveOut), pieceMs: 1000 });
+    assert.equal(whole.rate, 48000);
+    assert.equal(pieces.samples.length, whole.samples.length, `${leaveOut} left out: the same length`);
+    const worst = pieces.samples.reduce((m, x, i) => Math.max(m, Math.abs(x - whole.samples[i])), 0);
+    assert.ok(worst < 1e-5, `${leaveOut} left out: differs by up to ${worst}`);
+    // and part of it, in pieces, is that stretch of the whole
+    const part = await found.open({ part: { fromMs: 2000, toMs: 5000 }, decode: decoder(leaveOut), pieceMs: 700 });
+    // from its first sample at or after 2 s (the whole, opened from the very start, is short what was left out)
+    const from = Math.ceil((2000 * 48) / 1024) * 1024 - leaveOut;
+    const off = part.samples.reduce((m, x, i) => Math.max(m, Math.abs(x - whole.samples[from + i])), 0);
+    assert.ok(Math.abs(part.samples.length - 3000 * 48) <= 1024 && off < 1e-5, `${leaveOut} left out: the part differs by up to ${off}`);
+  }
 });

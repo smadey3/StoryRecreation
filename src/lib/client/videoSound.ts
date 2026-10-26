@@ -10,8 +10,11 @@ export type Source = {
   size: number;
   /** The bytes from `from` up to (not including) `to`. */
   read: (from: number, to: number) => Promise<ArrayBuffer>;
-  /** Pieces of sound closer together than this are read in one go (more, for a file far away). */
+  /** Pieces of sound closer together than this are read in one go, up to `most` bytes at a time. */
   near?: number;
+  most?: number;
+  /** How many reads are made at once. */
+  together?: number;
 };
 const onPhone = (file: Blob): Source => ({ size: file.size, read: (from, to) => file.slice(from, to).arrayBuffer() });
 
@@ -290,11 +293,33 @@ function m4a(v: DataView, sound: Sound, timing: Run[], sizes: Uint32Array, data:
   return new Blob([ftyp, moov, u32([data.length + 8]), text("mdat"), data], { type: "audio/mp4" });
 }
 
-/** A movie's sound, found: how long it is, and `read` for it (or for just part of it) as an .m4a. */
+/** Sound opened by a browser: a channel of samples for each of its channels. */
+export type Opened = { length: number; numberOfChannels: number; getChannelData: (channel: number) => Float32Array };
+
+/** A movie's sound, found: how long it is, `read` for it (or for just part of it) as an .m4a, and `open` to open it. */
 export type FoundSound = {
   durationMs: number;
-  read: (part?: { fromMs: number; toMs: number }, onProgress?: (fraction: number) => void) => Promise<Blob>;
+  read: (part?: Part, onProgress?: (fraction: number) => void) => Promise<Blob>;
+  /**
+   * The sound (or just part of it) opened as one mono track, a couple of minutes at a time: a phone runs short of room
+   * opening twenty minutes at once. `decode` opens an .m4a at the rate it's asked for.
+   */
+  open: (options: {
+    part?: Part;
+    decode: (m4a: Blob, rate: number) => Promise<Opened>;
+    onProgress?: (fraction: number) => void;
+    pieceMs?: number;
+  }) => Promise<{ samples: Float32Array; rate: number }>;
 };
+type Part = { fromMs: number; toMs: number };
+
+/** The rates an MP3 can be made at: sound kept at one of them is opened at it, so it's never made over. */
+const MP3_RATES = [48000, 44100, 32000, 24000, 22050, 16000];
+/**
+ * Each piece is opened from a few samples before it: the first sample opened comes out wrong (a sample of AAC is
+ * finished by the one after it), and a decoder may leave out the 2112 an encoder begins with, two of them and more.
+ */
+const LEAD = 6;
 
 /**
  * The AAC sound of an MP4, a MOV or an M4A; `"silent"` if it has no sound at all; null if it isn't one of those, or
@@ -311,20 +336,26 @@ export async function mp4Sound(file: Blob | Source): Promise<FoundSound | "silen
   // An iPhone 16 keeps a spatial copy of its sound too, in a format all its own: the AAC one is what plays.
   const sound = sounds.find((s) => s.enabled) ?? sounds[0];
   if (!sound || sound.offsets.some((at, i) => at + sound.sizes[i] > source.size)) return null;
+  const count = sound.sizes.length;
+  const within = (part?: Part): [number, number] => {
+    const [first, last] = part
+      ? samplesWithin(sound.timing, count, (part.fromMs / 1000) * sound.timescale, (part.toMs / 1000) * sound.timescale)
+      : [0, count];
+    if (last <= first) throw new Error("There's no sound in that part.");
+    return [first, last];
+  };
   return {
     durationMs: Math.round((ticks(sound.timing) / sound.timescale) * 1000),
-    read: (part, onProgress) => read(source, v, sound, part, onProgress),
+    read: async (part, onProgress) => readSamples(source, v, sound, ...within(part), onProgress),
+    open: async ({ part, decode, onProgress, pieceMs = 2 * 60 * 1000 }) => open(source, v, sound, within(part), decode, pieceMs, onProgress),
   };
 }
 
-/** The sound read from the file (all of it, or the samples in a part), a few pieces at a time. */
-async function read(file: Source, v: DataView, sound: Sound, part?: { fromMs: number; toMs: number }, onProgress?: (fraction: number) => void): Promise<Blob> {
-  const { offsets, sizes, timescale } = sound;
-  const [first, last] = part
-    ? samplesWithin(sound.timing, sizes.length, (part.fromMs / 1000) * timescale, (part.toMs / 1000) * timescale)
-    : [0, sizes.length];
-  if (last <= first) throw new Error("There's no sound in that part.");
-  // Where each sample goes, one after another; samples close together in the file are read in one go.
+/** Samples `first` up to `last` read from the file, a few pieces at a time, as an .m4a. */
+async function readSamples(file: Source, v: DataView, sound: Sound, first: number, last: number, onProgress?: (fraction: number) => void): Promise<Blob> {
+  const { offsets, sizes } = sound;
+  // Where each sample goes, one after another; samples close together in the file are read in one go (but never
+  // much at once: the picture between them may be most of the file).
   const place = new Float64Array(last - first);
   let total = 0;
   for (let i = first; i < last; i++) {
@@ -332,27 +363,91 @@ async function read(file: Source, v: DataView, sound: Sound, part?: { fromMs: nu
     total += sizes[i];
   }
   const near = file.near ?? 256 * 1024;
+  const most = file.most ?? 2 * 1024 * 1024;
   const spans: { first: number; last: number }[] = [];
   for (let i = first; i < last; i++) {
     const span = spans.at(-1);
     const gap = span ? offsets[i] - (offsets[i - 1] + sizes[i - 1]) : -1;
-    if (span && gap >= 0 && gap <= near) span.last = i;
+    if (span && gap >= 0 && gap <= near && offsets[i] + sizes[i] - offsets[span.first] <= most) span.last = i;
     else spans.push({ first: i, last: i });
   }
   const data = new Uint8Array(total);
   let got = 0;
-  for (let s = 0; s < spans.length; s += 8) {
-    await Promise.all(
-      spans.slice(s, s + 8).map(async (span) => {
-        const from = offsets[span.first];
-        const bytes = new Uint8Array(await file.read(from, offsets[span.last] + sizes[span.last]));
-        for (let i = span.first; i <= span.last; i++) {
-          data.set(bytes.subarray(offsets[i] - from, offsets[i] - from + sizes[i]), place[i - first]);
-          got += sizes[i];
-        }
-      }),
-    );
-    onProgress?.(got / total);
-  }
+  let next = 0;
+  const reader = async () => {
+    while (next < spans.length) {
+      const span = spans[next++];
+      const from = offsets[span.first];
+      const bytes = new Uint8Array(await file.read(from, offsets[span.last] + sizes[span.last]));
+      for (let i = span.first; i <= span.last; i++) {
+        data.set(bytes.subarray(offsets[i] - from, offsets[i] - from + sizes[i]), place[i - first]);
+        got += sizes[i];
+      }
+      onProgress?.(got / total);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(file.together ?? 8, spans.length) }, reader));
   return m4a(v, sound, timingOf(sound.timing, first, last), sizes.subarray(first, last), data);
+}
+
+/** Samples `first` up to `last`, opened a piece at a time into one mono track. */
+async function open(
+  file: Source,
+  v: DataView,
+  sound: Sound,
+  [first, last]: [number, number],
+  decode: (m4a: Blob, rate: number) => Promise<Opened>,
+  pieceMs: number,
+  onProgress?: (fraction: number) => void,
+): Promise<{ samples: Float32Array; rate: number }> {
+  // When each sample starts, in the track's ticks, and in samples of sound once opened.
+  const starts = new Float64Array(sound.sizes.length + 1);
+  let i = 0;
+  for (const run of sound.timing) for (let k = 0; k < run.count && i < sound.sizes.length; k++, i++) starts[i + 1] = starts[i] + run.delta;
+  const rate = MP3_RATES.includes(sound.timescale) ? sound.timescale : 44100;
+  const at = (sample: number) => Math.round((starts[sample] * rate) / sound.timescale);
+  const out = new Float32Array(at(last) - at(first) + rate);
+  let filled = 0;
+  const pieceTicks = (pieceMs / 1000) * sound.timescale;
+  for (let s = first; s < last; ) {
+    let e = s + 1;
+    while (e < last && starts[e] - starts[s] < pieceTicks) e++;
+    const lead = Math.min(LEAD, s);
+    const piece = await decode(await readSamples(file, v, sound, s - lead, e), rate);
+    const channels = Array.from({ length: piece.numberOfChannels }, (_, c) => piece.getChannelData(c));
+    const mono = (from: number, to: number, into: Float32Array, offset = 0) => {
+      into.fill(0, offset, offset + to - from);
+      for (const ch of channels) for (let k = from; k < to; k++) into[offset + k - from] += ch[k] / channels.length;
+    };
+    // Where this piece's own samples begin: what the decoder should have made of the lead, less what it left out at
+    // its start (as far as its length says)...
+    const short = Math.max(0, at(e) - at(s - lead) - piece.length);
+    let begin = Math.max(0, at(s) - at(s - lead) - short);
+    // ...or, after the first, wherever its lead matches the end of what's opened already, sample for sample.
+    const frame = at(s) - at(s - 1);
+    if (filled >= frame && lead >= 2) {
+      const tail = out.subarray(filled - frame, filled);
+      if (tail.reduce((n, x) => n + x * x, 0) > 1e-6) {
+        const lo = Math.max(0, begin - 4 * frame);
+        const hi = Math.min(piece.length, begin + 3 * frame);
+        const near = new Float32Array(Math.max(0, hi - lo));
+        mono(lo, hi, near);
+        let best = Infinity;
+        for (let k = 0; k + frame <= near.length; k++) {
+          let miss = 0;
+          for (let j = 0; j < frame && miss < best; j++) miss += (near[k + j] - tail[j]) ** 2;
+          if (miss < best) {
+            best = miss;
+            begin = lo + k + frame;
+          }
+        }
+      }
+    }
+    const n = Math.max(0, Math.min(piece.length - begin, out.length - filled));
+    mono(begin, begin + n, out, filled);
+    filled += n;
+    onProgress?.((e - first) / (last - first));
+    s = e;
+  }
+  return { samples: out.subarray(0, filled), rate };
 }

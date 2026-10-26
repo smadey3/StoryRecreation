@@ -118,7 +118,8 @@ a brand-new tale for the very same pictures.
 - **Videos give up their sound, and nothing else.** Pick a video from your photos (an iPhone's .MOV, or any MP4):
   its sound is taken out right there on the phone, and only that is sent and kept. The video itself never leaves
   the phone. Long ones are welcome: up to 20 minutes each, however big the video, as many as you like. From a
-  longer one (a video or a voice memo), you listen and slide to the 20 minutes or less to keep.
+  longer one (a video or a voice memo), you listen and slide a three-minute window to where they're speaking (a
+  minute to three is all a voice needs), or make it longer, up to 20 minutes, to keep more.
 - **Or straight from a Google Drive link.** Paste the link to a video in Google Drive (shared with “Anyone with
   the link”): its sound comes straight from Google to the phone, never through Storyhollow, and only that is
   fetched and kept, so a big video is no trouble.
@@ -314,9 +315,12 @@ humming placeholder voices.
   its sound but not a QuickTime movie, which is what an iPhone records. So the movie's tables are read for where
   its AAC sound is kept, just that is read from the file (a tenth of a megabyte of a 250 MB video), and it's packed,
   untouched, as a plain .m4a for the browser to open. A voice memo or voicemail saved as .m4a is read the same way.
-  From one longer than 20 minutes, only the part the family chooses is opened (a phone runs short of room opening
-  much more), and from a Drive link the same pieces are fetched with ranged requests, falling back to the whole
-  file (up to 400 MB) if Google won't send pieces. Any other kind of file is opened whole, as before.
+  From one longer than 20 minutes, only the part the family chooses is opened. The sound is opened two minutes at a
+  time into one mono track (each piece from six samples before it, and joined where it matches the end of the last
+  one, sample for sample), and the MP3 is made a block at a time, so twenty minutes needs a quarter of the room it
+  would opened whole. From a Drive link the same pieces are fetched with ranged requests, never more than about
+  2 MB at a time, falling back to the whole file (up to 400 MB) if Google won't send pieces. Any other kind of file
+  is opened whole, as before.
 - **Editing a page only re-records that page.** Recordings are cached by content, and changing the chime
   or the sounds re-binds the story without re-recording any voices.
 - **Pictures:** a separate Claude request reads a picture book's finished script and plans its pictures (each
