@@ -1021,17 +1021,14 @@ export function listFamilyVoices(householdId: string): FamilyVoice[] {
   const rows = db()
     .prepare("SELECT voice_id, name, person, keepsake_ids, created_at FROM family_voices WHERE household_id = ? ORDER BY created_at")
     .all(householdId) as Row[];
-  return rows.map((r) => {
-    // the person's own recording doubles as the voice's "Hear me" sample
-    const first = keepsakeFiles(householdId, json<string[]>(r.keepsake_ids) ?? [])[0];
-    return {
-      voiceId: r.voice_id as string,
-      name: r.name as string,
-      person: r.person as string,
-      previewUrl: first ? fileUrl(first.audioPath) : null,
-      createdAt: r.created_at as number,
-    };
-  });
+  // "Hear me" is the voice itself reading a few lines of a story (made the first time it's asked for: voiceSample.ts)
+  return rows.map((r) => ({
+    voiceId: r.voice_id as string,
+    name: r.name as string,
+    person: r.person as string,
+    previewUrl: `/api/family-voices/${encodeURIComponent(r.voice_id as string)}/sample`,
+    createdAt: r.created_at as number,
+  }));
 }
 
 export function saveFamilyVoice(householdId: string, v: { voiceId: string; name: string; person: string; keepsakeIds: string[] }) {

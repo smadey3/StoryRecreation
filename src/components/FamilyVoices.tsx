@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useApi } from "@/components/Grownup";
 import { Spinner, WaitLine } from "@/components/Waiting";
 import { clock, isVideo, MAX_MS, prepareRecording, TooLong } from "@/lib/client/audio";
+import { useVoicePreview } from "@/lib/client/sound";
 import { fetchFromDrive } from "@/lib/client/drive";
 import { keepAwake, sendTrouble, sentWords, upload } from "@/lib/client/upload";
 import { familyVoiceSeconds } from "@/lib/shared/options";
@@ -38,6 +39,7 @@ export function FamilyVoices({
   const voiceFor = (person: string) => familyVoices.find((v) => v.person === person);
   // Each person's recordings are a folder: open when there's only one person, and when a recording was just added to it.
   const [opened, setOpened] = useState<Set<string>>(() => new Set(people.length === 1 ? people : []));
+  const preview = useVoicePreview();
   const openFolder = (person: string, open: boolean) =>
     setOpened((cur) => {
       if (cur.has(person) === open) return cur;
@@ -107,6 +109,10 @@ export function FamilyVoices({
                 <div className="stack" style={{ ["--gap" as string]: "8px" }}>
                   <span className="keepsake-voice">💛 Reads stories as “{voice.name}”</span>
                   <div className="row" style={{ gap: 8 }}>
+                    {/* The voice itself reading a few lines of a story, not the recording it was learned from. */}
+                    <button className="btn btn-sm" onClick={() => preview.hear(voice.voiceId, voice.previewUrl)}>
+                      {preview.label(voice.voiceId, "▶ Hear how they read")}
+                    </button>
                     <Link href={`/read?reader=${encodeURIComponent(voice.voiceId)}`} className="btn btn-ghost btn-sm">
                       📖 Pick something to read
                     </Link>

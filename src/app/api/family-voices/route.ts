@@ -6,6 +6,7 @@ import { resolveHouseholdPath } from "@/lib/server/files";
 import { sliceMp3 } from "@/lib/server/mp3";
 import { cloneFamilyVoice, elevenLabsReason } from "@/lib/server/performer";
 import { forgetVoiceCache } from "@/lib/server/voices";
+import { voiceSample } from "@/lib/server/voiceSample";
 
 const MIN_MS = 10_000;
 /** ElevenLabs learns nothing from a shorter recording (it asks for at least 5 seconds of each). */
@@ -60,5 +61,7 @@ export const POST = route(async (req: Request) => {
   }
   saveFamilyVoice(ctx.household.id, { voiceId, name, person, keepsakeIds: files.map((f) => f.id) });
   forgetVoiceCache();
+  // Their voice reading a few lines, made now, so it's ready by the time anyone taps "Hear me".
+  void voiceSample(ctx.household.id, voiceId).catch((err) => console.error("Could not make a voice sample", err));
   return Response.json({ voiceId, name });
 });

@@ -142,6 +142,10 @@ a brand-new tale for the very same pictures.
   phone). *Read to Me*'s own-words step and the welcome page mention it too. Once there is one, they come first in
   every storyteller list, and their folder offers *Pick something to read* or *A new story, read by them*,
   which open with them already chosen.
+- **Hear the voice that was made, not the recording.** *▶ Hear me* on a family voice, and *▶ Hear how they read*
+  in their folder, play that voice reading a few lines of a bedtime story (about fifteen seconds, a whisper and a
+  smile in it). It's made once, as soon as the voice is (or the first time it's asked for: "⏳ A moment…"), for a
+  few seconds of voice credit, and kept with the family's files (`src/lib/server/voiceSample.ts`).
 - **Made right where the storyteller is chosen.** *Someone you love* (under **🪄 Make a new voice**) and *Make
   their voice →* open a window over the page, in two steps: a recording of them (a file, a video, a Google Drive
   link, or *Record now*), then their voice learned. Someone with recordings already goes straight to the second

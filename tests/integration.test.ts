@@ -497,10 +497,10 @@ test("a grown-up's recordings become a family voice that reads only when chosen"
   db.saveFamilyVoice(hh, { voiceId, name: "Grandma June", person: "Grandma June", keepsakeIds: [k.id] });
   forgetVoiceCache();
   const voices = await voiceCatalog(hh);
-  // first in every storyteller list, with her own voicemail as the sample
+  // first in every storyteller list, and "Hear me" is her voice reading a few lines of a story
   assert.equal(voices[0].voiceId, voiceId);
   assert.equal(voices[0].source, "family");
-  assert.equal(voices[0].previewUrl, "/api/files/keepsakes/a.mp3");
+  assert.equal(voices[0].previewUrl, `/api/family-voices/${voiceId}/sample`);
   // never cast as a character unless the family picked her to tell the story
   assert.ok(!castableVoices(voices, null).some((v) => v.voiceId === voiceId));
   assert.ok(castableVoices(voices, voiceId).some((v) => v.voiceId === voiceId));
@@ -509,6 +509,33 @@ test("a grown-up's recordings become a family voice that reads only when chosen"
   assert.ok(captured.some((c) => c.method === "DELETE" && c.url === `/v1/voices/${voiceId}`));
   assert.ok(db.deleteFamilyVoice(hh, voiceId));
   assert.equal(db.deleteKeepsake(hh, k.id), "keepsakes/a.mp3");
+});
+
+test("a family voice's sample is the voice itself reading a few lines of a story, made once and kept", async () => {
+  const { voiceSample, forgetVoiceSample, SAMPLE_TEXT } = await import("@/lib/server/voiceSample");
+  const { resolveHouseholdPath } = await import("@/lib/server/files");
+  const db = await import("@/lib/server/db");
+  const hh = db.createHousehold("The Samples", "samples@example.com", "x");
+  const asked = () => captured.filter((c) => c.url.startsWith("/v1/text-to-dialogue") && JSON.stringify(c.body).includes("a little fox"));
+  const before = asked().length;
+
+  // tapped twice at once, it's made once
+  const [rel, again] = await Promise.all([voiceSample(hh, "famVoice123"), voiceSample(hh, "famVoice123")]);
+  assert.equal(rel, again);
+  assert.equal(rel, "voices/famVoice123-sample.mp3");
+  const made = asked().slice(before);
+  assert.equal(made.length, 1);
+  const inputs = (made[0].body as { inputs: { text: string; voice_id: string }[] }).inputs;
+  assert.deepEqual(inputs, [{ text: SAMPLE_TEXT, voice_id: "famVoice123" }]);
+  const mp3 = fs.readFileSync(resolveHouseholdPath(hh, rel));
+  assert.ok(mp3.length > 1000 && mp3[0] === 0xff, "an MP3");
+
+  // after that it's simply played
+  assert.equal(await voiceSample(hh, "famVoice123"), rel);
+  assert.equal(asked().length, before + 1);
+  // and a voice that's gone takes its sample with it
+  forgetVoiceSample(hh, "famVoice123");
+  assert.ok(!fs.existsSync(resolveHouseholdPath(hh, rel)));
 });
 
 test("when ElevenLabs turns a voice down, the family hears why", async () => {

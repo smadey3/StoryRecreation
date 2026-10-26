@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { pickPhotos, type PickedPhoto } from "@/lib/client/images";
-import { previewChime, previewVoice } from "@/lib/client/sound";
+import { previewChime, previewVoice, useVoicePreview } from "@/lib/client/sound";
 import { CHIMES } from "@/lib/shared/options";
 import type { ChimeSettings, ChimeStyle, StoryLanguage, VoiceOption } from "@/lib/shared/types";
 import { FamilyVoiceWindow } from "./FamilyVoices";
@@ -264,6 +264,7 @@ export function VoicePicker({
   // A family voice just made: a word that they can read now.
   const [made, setMade] = useState<VoiceOption | null>(null);
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
+  const preview = useVoicePreview();
   useEffect(() => {
     if (voices) setFavorites(new Set(voices.filter((v) => v.favorite).map((v) => v.voiceId)));
   }, [voices]);
@@ -292,7 +293,7 @@ export function VoicePicker({
   const filters = VOICE_FILTERS.filter((f) => f.id === "all" || f.id === "favorites" || all.some((v) => groupOf(v) === f.id));
 
   const hear = (v: VoiceOption) => {
-    if (!previewVoice(v.previewUrl)) speakSample(`Hello! I'm ${v.persona?.name ?? v.name}.`);
+    if (!preview.hear(v.voiceId, v.previewUrl)) speakSample(`Hello! I'm ${v.persona?.name ?? v.name}.`);
   };
   const toggleFavorite = (voiceId: string) => {
     const favorite = !favorites.has(voiceId);
@@ -384,7 +385,7 @@ export function VoicePicker({
                     hear(v);
                   }}
                 >
-                  ▶ Hear me
+                  {preview.label(v.voiceId)}
                 </button>
               </div>
             );
