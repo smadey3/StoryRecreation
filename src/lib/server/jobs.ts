@@ -19,7 +19,7 @@ import {
 } from "./db";
 import { readImageForModel, storyDir } from "./files";
 import { castableVoices, voiceCatalog } from "./voices";
-import { spotSoundEffects, writeScript, StorytellerError, type StoryRequest } from "./storyteller";
+import { OutOfCreditError, spotSoundEffects, writeScript, StorytellerError, type StoryRequest } from "./storyteller";
 import { demoSoundCues, writeDemoScript } from "./demo-storyteller";
 import { performAmbience, performLines, performSoundEffect, PerformerError } from "./performer";
 import { encodeMp3, floatToPcm16, mixStory, pcm16ToFloat, type Clip, type PlacedEffect } from "./audio";
@@ -63,7 +63,8 @@ function launch(key: string, storyId: string, fn: () => Promise<(() => void) | v
           ? err.message
           : "Something went wrong. Please try again.";
       updateStory(storyId, { status: "error", error: friendly, progress: null });
-      void alertStoryFailed(storyId, friendly).catch(() => undefined);
+      // Out of storyteller credit has an email of its own, already sent.
+      if (!(err instanceof OutOfCreditError)) void alertStoryFailed(storyId, friendly).catch(() => undefined);
     })
     .finally(() => {
       running.delete(storyId);

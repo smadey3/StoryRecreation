@@ -90,6 +90,16 @@ test("a story that didn't finish is emailed once, with what went wrong and a lin
   assert.equal(emails.length, 1);
 });
 
+test("the storyteller's credit running out is emailed once a day while it lasts, saying how to fix it", async () => {
+  const { alertStorytellerOutOfCredit } = await import("@/lib/server/alerts");
+  assert.equal(await alertStorytellerOutOfCredit(), true);
+  const email = emails.at(-1)!;
+  assert.equal(email.subject, "Storyhollow: the storyteller's Anthropic credit has run out");
+  assert.match(email.text, /console\.anthropic\.com \(Settings → Billing\), or turn on auto reload/);
+  assert.match(email.text, /nothing already made is lost, and nothing is paid for twice/);
+  assert.equal(await alertStorytellerOutOfCredit(), false, "not again the same day");
+});
+
 test("a failed backup is emailed at most once a day, and low voice credit once a month", async () => {
   const { alertBackupFailed, checkVoiceCreditLow } = await import("@/lib/server/alerts");
   const { forgetVoiceCredits } = await import("@/lib/server/credits");

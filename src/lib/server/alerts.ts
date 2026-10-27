@@ -102,6 +102,24 @@ export async function alertBackupFailed(reason: string): Promise<boolean> {
   });
 }
 
+/**
+ * The storyteller's prepaid Anthropic credit has run out (with auto reload off, it simply stops at nothing). Once a day
+ * while it lasts: it's the same news, wherever the storyteller was turned down.
+ */
+export async function alertStorytellerOutOfCredit(): Promise<boolean> {
+  return sendAlert({
+    kind: "credits",
+    key: "storyteller",
+    subject: "the storyteller's Anthropic credit has run out",
+    lines: [
+      "Anthropic turned the storyteller down because the account's prepaid credit is used up, so new stories can't be written (or their pictures planned) until it's topped up.",
+      "Add credit at console.anthropic.com (Settings → Billing), or turn on auto reload there. Then press “Try again” on any story that stopped: nothing already made is lost, and nothing is paid for twice.",
+    ],
+    link: { label: "Open Storyhollow", path: "/" },
+    quietFor: 20 * HOUR,
+  });
+}
+
 /** Under a tenth of the month's voice credit left: once a month. */
 export async function checkVoiceCreditLow(): Promise<boolean> {
   const credits = await voiceCredits();

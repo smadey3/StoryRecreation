@@ -444,6 +444,14 @@ stories cost) and how many voice credits it uses. Pictures are bought one step a
 what recent pictures really cost), and never cost more than the price approved. The Grown-ups' corner lists what was
 spent this month.
 
+**When the money runs out.** A story that needs more voice credits than are left asks before it starts (*Start
+anyway* or *Not now*), since the recording would stop partway. If either service does run out mid-story, the story
+stops with *Try again* and says why: every page already recorded is kept, so trying again once there's credit makes
+only what's missing and pays for nothing twice. ElevenLabs' credit is shown in the Grown-ups' corner; Anthropic's
+prepaid credit can't be read by the app, so check it at console.anthropic.com (or turn on auto reload there). When
+it runs out, the storyteller says so plainly ("The storyteller's Anthropic credit has run out…") and isn't asked again
+and again.
+
 ---
 
 ## Hosting it for the family
@@ -561,7 +569,8 @@ It won't write over an existing library unless you add `--force`.
 
 The app can email you when something goes wrong that you'd otherwise find at bedtime: a story that didn't
 finish writing or recording (with ElevenLabs' or Claude's reason, and a link back to it), a nightly backup that
-failed, or voice credit under a tenth of the month's. It sends through [Resend](https://resend.com): make a free
+failed, voice credit under a tenth of the month's, or the storyteller's Anthropic credit used up (once a day while
+it lasts). It sends through [Resend](https://resend.com): make a free
 account with the address the alerts should go to, create a key with sending access, and set:
 
 | Variable | What it is |

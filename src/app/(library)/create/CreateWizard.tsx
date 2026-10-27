@@ -6,7 +6,7 @@ import { useApi } from "@/components/Grownup";
 import { ChimePicker, PhotoPicker, SoundsPicker, VoicePicker, soundsOf, useVoices } from "@/components/Pickers";
 import { BookPicker } from "@/components/BookPicker";
 import { Steps, toTop } from "@/components/Steps";
-import { CreditNote } from "@/components/Credits";
+import { CreditButton, CreditNote } from "@/components/Credits";
 import { StylePicker, bookEstimate } from "@/components/PictureBook";
 import { DEFAULT_ART_STYLE, formatMoney, storytellerCost } from "@/lib/shared/art";
 import type { PickedPhoto } from "@/lib/client/images";
@@ -652,9 +652,9 @@ export function CreateWizard({
             <CreditNote needed={words.chars} />
             {error && <p className="notice notice-error">{error}</p>}
             <div className="center">
-              <button className="btn btn-lg" onClick={conjure} disabled={Boolean(busy)}>
+              <CreditButton needed={words.chars} className="btn btn-lg" onClick={conjure} disabled={Boolean(busy)}>
                 {busy ?? "✨ Conjure the story"}
-              </button>
+              </CreditButton>
             </div>
           </>
         )}
@@ -672,9 +672,9 @@ export function CreateWizard({
               <button className="btn btn-ghost" type="button" onClick={() => goTo(1)} disabled={!sourceReady || Boolean(busy)}>
                 Change the details
               </button>
-              <button className="btn" type="button" onClick={conjure} disabled={!sourceReady || Boolean(busy)}>
+              <CreditButton needed={words.chars} className="btn" onClick={conjure} disabled={!sourceReady || Boolean(busy)}>
                 {busy ?? "✨ Make my story"}
-              </button>
+              </CreditButton>
             </div>
           ) : (
             step < 3 && (

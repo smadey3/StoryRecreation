@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useApi } from "@/components/Grownup";
 import type { VoiceCredits } from "@/lib/shared/types";
 
@@ -66,6 +66,59 @@ export function CreditsLeft({ className = "faint small center" }: { className?: 
       You have {n(credits.left)} voice credits left{until(credits)}
       {credits.demo ? " (pretend, in demo mode)" : ""}.
     </p>
+  );
+}
+
+/**
+ * A button that starts something spending voice credits. When it needs more than are left, the first tap asks first:
+ * a story that runs out stops partway (what's recorded is kept, and "Try again" records the rest once there's credit).
+ */
+export function CreditButton({
+  needed,
+  onClick,
+  className,
+  disabled,
+  children,
+}: {
+  needed: number;
+  onClick: () => void;
+  className?: string;
+  disabled?: boolean;
+  children: ReactNode;
+}) {
+  const credits = useCredits();
+  const [asking, setAsking] = useState(false);
+  const short = Boolean(credits && needed > credits.left);
+  if (asking && short && credits) {
+    return (
+      <div className="notice notice-error credit-ask stack" role="alertdialog" aria-label="Not enough voice credits" style={{ ["--gap" as string]: "10px" }}>
+        {/* The note beside the button already says how many it needs and how many are left. */}
+        <p className="small" style={{ margin: 0 }}>
+          <b>Start it anyway?</b> It will stop partway. What&apos;s recorded is kept, and <i>Try again</i> records the rest once you top up at
+          elevenlabs.io{credits.resetsAt ? ` or the credits refill${until(credits).replace(" until", " on")}` : ""}.
+        </p>
+        <div className="row" style={{ gap: 8, justifyContent: "center" }}>
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={() => {
+              setAsking(false);
+              onClick();
+            }}
+          >
+            Start anyway
+          </button>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setAsking(false)}>
+            Not now
+          </button>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <button type="button" className={className} disabled={disabled} onClick={() => (short ? setAsking(true) : onClick())}>
+      {children}
+    </button>
   );
 }
 

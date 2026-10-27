@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useApi } from "@/components/Grownup";
 import { Cover, hueFor } from "@/components/Books";
 import { Steps, toTop } from "@/components/Steps";
-import { CreditNote, CreditsLeft, useCredits } from "@/components/Credits";
+import { CreditButton, CreditNote, CreditsLeft, useCredits } from "@/components/Credits";
 import { VoicePicker, useVoices } from "@/components/Pickers";
 import { pickPhotos } from "@/lib/client/images";
 import { sendTrouble, sentWords, upload } from "@/lib/client/upload";
@@ -588,9 +588,14 @@ export function ReadToMe({
           )}
           {chosen?.credits ? <CreditNote needed={chosen.credits} className="small muted center" /> : <CreditsLeft className="small muted center" />}
           <div className="center">
-            <button className="btn btn-lg" onClick={readIt} disabled={!chosen || Boolean(busy) || (tab === "own" && !storytellerReady)}>
+            <CreditButton
+              needed={chosen?.credits ?? 0}
+              className="btn btn-lg"
+              onClick={readIt}
+              disabled={!chosen || Boolean(busy) || (tab === "own" && !storytellerReady)}
+            >
               🎧 Read it to me
-            </button>
+            </CreditButton>
           </div>
         </div>
       )}

@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
+import { alertStorytellerOutOfCredit } from "./alerts";
 import { config } from "./config";
 import { claudeCost } from "./prices";
 import { JsonStream } from "./json-stream";
@@ -301,6 +302,21 @@ function anthropic(): Anthropic {
 
 export class StorytellerError extends Error {}
 
+/** The storyteller's prepaid Anthropic credit is used up: every request is turned down, saying so, until it's topped up. */
+export class OutOfCreditError extends StorytellerError {}
+
+export function outOfCredit(err: unknown): boolean {
+  return err instanceof Anthropic.APIError && [400, 402, 403].includes(err.status ?? 0) && /credit balance|purchase credits|billing/i.test(err.message);
+}
+
+/** Said in the app, and emailed to the grown-ups (once in a while, while it lasts). */
+function creditGone(): OutOfCreditError {
+  void alertStorytellerOutOfCredit().catch(() => undefined);
+  return new OutOfCreditError(
+    "The storyteller's Anthropic credit has run out. Add credit at console.anthropic.com (Settings → Billing), then try again: nothing made so far is lost.",
+  );
+}
+
 /**
  * A storyteller request, asked again while the storyteller is busy (the account's limit for the minute, or a moment's
  * overload), at the pace Anthropic asks for, for up to about three minutes: when many families are making stories at
@@ -379,6 +395,7 @@ export async function writeScript(req: StoryRequest, onProgress: WriteProgress):
   try {
     message = await patiently(write, () => onProgress("The storyteller is busy, so the story waits a moment", 0, req.pageCount));
   } catch (err) {
+    if (outOfCredit(err)) throw creditGone();
     if (err instanceof Anthropic.AuthenticationError) throw new StorytellerError("The Anthropic API key was not accepted.");
     if (err instanceof Anthropic.RateLimitError) throw new StorytellerError("The storyteller is busy right now. Please try again in a few minutes.");
     if (err instanceof Anthropic.APIError) throw new StorytellerError(`The storyteller hit a snag (${err.status}). Please try again.`);
@@ -604,6 +621,7 @@ export async function spotSoundEffects(script: StoryScript): Promise<{ cues: Sou
       }),
     );
   } catch (err) {
+    if (outOfCredit(err)) throw creditGone();
     if (err instanceof Anthropic.AuthenticationError) throw new StorytellerError("The Anthropic API key was not accepted.");
     if (err instanceof Anthropic.APIError) throw new StorytellerError(`The sound designer hit a snag (${err.status}). Please try again.`);
     throw err;
@@ -732,6 +750,7 @@ export async function planPictures(
       }),
     );
   } catch (err) {
+    if (outOfCredit(err)) throw creditGone();
     if (err instanceof Anthropic.AuthenticationError) throw new StorytellerError("The Anthropic API key was not accepted.");
     if (err instanceof Anthropic.RateLimitError) throw new StorytellerError("The storyteller is busy right now. Please try again in a minute.");
     if (err instanceof Anthropic.APIError) throw new StorytellerError(`The storyteller hit a snag planning the pictures (${err.status}). Please try again.`);
@@ -790,6 +809,7 @@ export async function readWordsFromPictures(images: StoryImage[]): Promise<{ tit
       }),
     );
   } catch (err) {
+    if (outOfCredit(err)) throw creditGone();
     if (err instanceof Anthropic.AuthenticationError) throw new StorytellerError("The Anthropic API key was not accepted.");
     if (err instanceof Anthropic.RateLimitError) throw new StorytellerError("The storyteller is busy right now. Please try again in a minute.");
     if (err instanceof Anthropic.APIError) throw new StorytellerError(`The storyteller hit a snag reading that (${err.status}). Please try again.`);
@@ -853,6 +873,7 @@ export async function describeFromPhoto(image: StoryImage, character: { name: st
       }),
     );
   } catch (err) {
+    if (outOfCredit(err)) throw creditGone();
     if (err instanceof Anthropic.AuthenticationError) throw new StorytellerError("The Anthropic API key was not accepted.");
     if (err instanceof Anthropic.RateLimitError) throw new StorytellerError("The storyteller is busy right now. Please try again in a minute.");
     if (err instanceof Anthropic.APIError) throw new StorytellerError(`The storyteller hit a snag looking at that (${err.status}). Please try again.`);

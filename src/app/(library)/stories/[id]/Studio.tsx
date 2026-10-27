@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useApi } from "@/components/Grownup";
 import { Brewing } from "@/components/Brewing";
 import { toTop } from "@/components/Steps";
-import { CreditNote } from "@/components/Credits";
+import { CreditButton, CreditNote } from "@/components/Credits";
 import { ChimePicker, SoundsPicker, VoicePicker, VoiceSelect, soundsOf, useVoices, type SoundsChoice } from "@/components/Pickers";
 import { VoiceDesigner } from "@/components/VoiceDesigner";
 import { imageForPage } from "@/lib/shared/pages";
@@ -538,9 +538,9 @@ export function Studio({
                     🎲 Write a different story
                   </button>
                 )}
-                <button className="btn btn-lg btn-velvet" onClick={record} disabled={busy || !status.voices && !status.demoMode}>
+                <CreditButton needed={chars} className="btn btn-lg btn-velvet" onClick={record} disabled={busy || !status.voices && !status.demoMode}>
                   🎙️ {story.status === "ready" ? "Re-record" : "Record the story"}
-                </button>
+                </CreditButton>
               </div>
               {!status.voices && !status.demoMode && (
                 <p className="notice small">Recording needs an ElevenLabs API key. <Link href="/grownups">Set it up</Link>.</p>
@@ -590,9 +590,9 @@ export function Studio({
               <button className="btn btn-ghost" onClick={() => setNewNarrator(null)}>
                 Keep {voiceName(narratorVoice)}
               </button>
-              <button className="btn btn-velvet" onClick={() => changeNarrator(newNarrator)} disabled={busy || newNarrator === narratorVoice}>
+              <CreditButton needed={chars} className="btn btn-velvet" onClick={() => changeNarrator(newNarrator)} disabled={busy || newNarrator === narratorVoice}>
                 {busy ? "Starting…" : `🎙️ Re-record with ${voiceName(newNarrator)}`}
-              </button>
+              </CreditButton>
             </div>
           </div>
         </div>

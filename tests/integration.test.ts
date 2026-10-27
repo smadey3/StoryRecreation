@@ -46,6 +46,7 @@ const OWL_VOICE = "pqHfZKP75CvOlQylNhV4";
 // A storyteller that writes slowly (milliseconds between pieces), and voices that take a while, to watch what happens
 // while each is at work: when the script finished, and every recording asked for, when, and how many at once.
 let busyFor = 0; // the storyteller's next few requests are turned away: too many this minute
+let creditGone = false; // the storyteller's prepaid credit is used up
 let writingPause = 0;
 let writingEndedAt = 0;
 let voicingPause = 0;
@@ -93,6 +94,16 @@ before(async () => {
       const body = raw && String(req.headers["content-type"] ?? "").includes("json") ? JSON.parse(raw) : raw || null;
       captured.push({ method: req.method!, url: req.url!, headers: req.headers, body });
       if (req.url!.startsWith("/v1/messages")) {
+        if (creditGone) {
+          // what Anthropic says once the prepaid credit is used up (with auto reload off)
+          res.writeHead(400, { "content-type": "application/json" });
+          return res.end(
+            JSON.stringify({
+              type: "error",
+              error: { type: "invalid_request_error", message: "Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits." },
+            }),
+          );
+        }
         if (busyFor > 0) {
           busyFor--;
           res.writeHead(429, { "content-type": "application/json", "retry-after-ms": "150" });
@@ -629,6 +640,27 @@ test("sign-ups close after the first family unless a sign-up code is set", async
   assert.ok(!codeMatches("moon"));
   assert.ok(!codeMatches(""));
   delete process.env.SIGNUP_CODE;
+});
+
+test("when the storyteller's credit runs out, it says so plainly, and isn't asked again and again", async () => {
+  const { spotSoundEffects, OutOfCreditError } = await import("@/lib/server/storyteller");
+  const script = {
+    title: "The Little Door",
+    synopsis: "",
+    ambience: "",
+    cast: [{ id: "narrator", name: "Narrator", description: "", voiceBrief: "", voiceId: PERSONA_VOICE }],
+    pages: [{ page: 1, picture: "", lines: [{ speaker: "narrator", text: "Then the little door creaked open." }] }],
+  };
+  const before = captured.filter((c) => c.url.startsWith("/v1/messages")).length;
+  creditGone = true;
+  try {
+    const err = await spotSoundEffects(script).catch((e: unknown) => e);
+    assert.ok(err instanceof OutOfCreditError, String(err));
+    assert.match(err.message, /Anthropic credit has run out\. Add credit at console\.anthropic\.com .* nothing made so far is lost/);
+    assert.equal(captured.filter((c) => c.url.startsWith("/v1/messages")).length, before + 1, "asked once, not retried like a busy storyteller");
+  } finally {
+    creditGone = false;
+  }
 });
 
 test("sound effects are chosen for a finished script, made short, and land on their word", async () => {
