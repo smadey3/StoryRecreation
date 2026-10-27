@@ -325,38 +325,6 @@ export function GrownupsView({
         </form>
       </Fold>
 
-      {turnedDown && (
-        <Fold
-          id="for-children"
-          title="Kept for children"
-          note={turnedDown.length ? `${turnedDown.length} turned down` : "Nothing turned down"}
-          about="What the storyteller won't make, and anything it turned down."
-        >
-          <p className="muted" style={{ margin: 0 }}>
-            Every story idea, the words <i>Read to Me</i> is asked to read, words changed in a story and voices described are checked
-            first, and the storyteller keeps the same rules. Hard things children meet (a pet dying, a hospital stay, a bully at school) are
-            handled gently, but nothing a children&apos;s book wouldn&apos;t hold is made: sex, drugs or alcohol, self-harm, graphic
-            violence, cruelty played for fun, hate or swearing. Anything turned down is listed here, with who asked.
-          </p>
-          {turnedDown.length > 0 && (
-            <ul className="spend-list turned-down">
-              {turnedDown.map((t) => (
-                <li key={t.id}>
-                  <span className="small muted">
-                    {mounted ? new Date(t.createdAt).toLocaleDateString([], { month: "short", day: "numeric" }) : ""}
-                  </span>
-                  <span>
-                    <b>{TURNED_DOWN_PLACE[t.place]}</b>
-                    {t.reader ? ` · as ${t.reader}` : ""} · {t.kind}
-                    <span className="small muted turned-down-asked">“{t.asked}”</span>
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Fold>
-      )}
-
       {spending && (
         <Fold
           id="spending"
@@ -443,6 +411,38 @@ export function GrownupsView({
           </div>
         )}
       </Fold>
+
+      {turnedDown && (
+        <Fold
+          id="for-children"
+          title="Child safety"
+          note={turnedDown.length ? `${turnedDown.length} turned down` : "On"}
+          about="What the storyteller won't make, and anything it turned down."
+        >
+          <p className="muted" style={{ margin: 0 }}>
+            Every story idea, the words <i>Read to Me</i> is asked to read, words changed in a story and voices described are checked
+            first, and the storyteller keeps the same rules. Hard things children meet (a pet dying, a hospital stay, a bully at school) are
+            handled gently, but nothing a children&apos;s book wouldn&apos;t hold is made: sex, drugs or alcohol, self-harm, graphic
+            violence, cruelty played for fun, hate or swearing. Anything turned down is listed here, with who asked.
+          </p>
+          {turnedDown.length > 0 && (
+            <ul className="spend-list turned-down">
+              {turnedDown.map((t) => (
+                <li key={t.id}>
+                  <span className="small muted">
+                    {mounted ? new Date(t.createdAt).toLocaleDateString([], { month: "short", day: "numeric" }) : ""}
+                  </span>
+                  <span>
+                    <b>{TURNED_DOWN_PLACE[t.place]}</b>
+                    {t.reader ? ` · as ${t.reader}` : ""} · {t.kind}
+                    <span className="small muted turned-down-asked">“{t.asked}”</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Fold>
+      )}
 
       <Fold id="safe" title="Keeping your stories safe" note={backupNote?.short ?? ""} about="Nightly backups, and a copy to download.">
         {backups && <BackupsPanel initial={backups} />}

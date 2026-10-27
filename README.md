@@ -340,7 +340,7 @@ humming placeholder voices.
   children meet (a pet dying, a hospital stay, a bully at school) stay welcome, handled gently. The storyteller keeps
   the same rules, and says (`for_children`, first in its answer, so no page is voiced) when the photos or a book's
   pages themselves aren't for children. Without the storyteller, a plain screen of unmistakable words stands in. The
-  Grown-ups' corner lists everything turned down, with who asked (*Kept for children*). See
+  Grown-ups' corner lists everything turned down, with who asked (*Child safety*). See
   `src/lib/server/guard.ts`.
 - **What things cost** is worked out from each service's reported usage (`src/lib/server/prices.ts`) and kept in
   the database (`src/lib/server/spending.ts`), so estimates follow what the family's stories have really cost.
