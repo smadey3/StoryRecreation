@@ -1308,6 +1308,16 @@ a.choice {
   display: grid;
   gap: 8px;
 }
+/* What the storyteller turned down: where and why, then a little of what was asked. */
+.spend-list.turned-down li {
+  grid-template-columns: 1fr;
+  gap: 2px;
+}
+.turned-down-asked {
+  display: block;
+  margin-top: 2px;
+  overflow-wrap: anywhere;
+}
 .story-keep {
   display: flex;
   flex-wrap: wrap;

@@ -104,6 +104,20 @@ before(async () => {
             }),
           );
         }
+        if ((body as { model?: string }).model === "claude-haiku-5-5") {
+          // the quick check that what a family asked for is for children: this one draws the line at vodka and cigarettes
+          const asked = JSON.stringify((body as { messages: unknown }).messages);
+          const verdict = /vodka|cigarette/i.test(asked)
+            ? { for_children: false, kind: "drugs", why: "It asks for alcohol." }
+            : { for_children: true, kind: "fine", why: "A gentle story idea." };
+          res.writeHead(200, { "content-type": "application/json" });
+          return res.end(
+            JSON.stringify({
+              id: "msg_guard", type: "message", role: "assistant", model: "claude-haiku-5-5", stop_reason: "end_turn", stop_sequence: null,
+              content: [{ type: "text", text: JSON.stringify(verdict) }], usage: { input_tokens: 300, output_tokens: 20 },
+            }),
+          );
+        }
         if (busyFor > 0) {
           busyFor--;
           res.writeHead(429, { "content-type": "application/json", "retry-after-ms": "150" });
@@ -640,6 +654,74 @@ test("sign-ups close after the first family unless a sign-up code is set", async
   assert.ok(!codeMatches("moon"));
   assert.ok(!codeMatches(""));
   delete process.env.SIGNUP_CODE;
+});
+
+test("what a family asks for is checked first, and what isn't for children is turned down and noted for the grown-ups", async () => {
+  const { forChildren, keepForChildren } = await import("@/lib/server/guard");
+  const db = await import("@/lib/server/db");
+  const hh = db.createHousehold("The Checks", "checks@example.com", "x");
+  const mia = db.createProfile(hh, { name: "Mia", avatar: "🦋", color: "#8e2a3a", age: 7 });
+  const from = captured.length;
+
+  // a hard thing children meet, handled gently, is fine
+  assert.deepEqual(await forChildren([{ label: "Story idea", text: "Our dog Biscuit died and Leo misses him." }], "4-5"), { forChildren: true });
+  const asked = captured.slice(from).find((c) => c.url.startsWith("/v1/messages"))!.body as Record<string, any>;
+  assert.equal(asked.model, "claude-haiku-5-5", "a small, quick model");
+  assert.match(asked.system, /a pet or a grandparent dying/);
+  assert.match(asked.messages[0].content, /The listener is ages 4–5\.[\s\S]*<family>\nStory idea: Our dog Biscuit died/);
+  assert.equal(asked.output_config.format.schema.required.join(), "for_children,kind,why");
+
+  // nothing typed: nothing to ask
+  const before = captured.length;
+  assert.deepEqual(await forChildren([{ label: "Story idea", text: "  " }, { label: "Characters", text: null }]), { forChildren: true });
+  assert.equal(captured.length, before);
+
+  // what isn't for children is turned down, and kept for the grown-ups to see, with who asked
+  const ctx = { household: { id: hh }, profile: mia, grownup: true } as never;
+  await assert.rejects(
+    keepForChildren(ctx, "story", [{ label: "Story idea", text: "Two bunnies share a bottle of vodka" }], "6-8"),
+    (err: Error & { status?: number; code?: string }) =>
+      err.message === "Storyhollow only makes stories for children, and this touches on drugs, alcohol or smoking. Try a different idea." &&
+      err.status === 422 &&
+      err.code === "not_for_children",
+  );
+  const [noted] = db.listTurnedDown(hh);
+  assert.equal(noted.place, "story");
+  assert.equal(noted.kind, "drugs, alcohol or smoking");
+  assert.equal(noted.reader, "Mia");
+  assert.equal(noted.asked, "Story idea: Two bunnies share a bottle of vodka");
+});
+
+test("the storyteller won't make anything of pictures or pages that aren't for children, and nothing is voiced", async () => {
+  const { writeScript, NotForChildrenError } = await import("@/lib/server/storyteller");
+  const { defaultSettings } = await import("@/lib/shared/options");
+  const { voiceCatalog } = await import("@/lib/server/voices");
+  const from = captured.length;
+  scriptJson = JSON.stringify({ for_children: false, title: "", synopsis: "", ambience: "", cast: [], pages: [] });
+  const pages: unknown[] = [];
+  const err = await writeScript(
+    {
+      mode: "create",
+      bookTitle: "Out and about",
+      bookKind: "wild",
+      settings: defaultSettings({ source: "wild" }),
+      images: [],
+      pageCount: 3,
+      previousStories: [],
+      rememberedCharacters: [],
+      voices: await voiceCatalog("household-1"),
+      onPage: (page: unknown) => pages.push(page),
+    } as never,
+    () => undefined,
+  ).catch((e: unknown) => e);
+  assert.ok(err instanceof NotForChildrenError, String(err));
+  assert.match(err.message, /Storyhollow's stories are for children, and these pictures or wishes aren't/);
+  assert.equal(pages.length, 0, "no page handed over to be voiced");
+  const body = captured.slice(from).find((c) => c.url.startsWith("/v1/messages"))!.body as Record<string, any>;
+  const schema = body.output_config.format.schema;
+  assert.equal(Object.keys(schema.properties)[0], "for_children", "asked first, before any page");
+  assert.ok(schema.required.includes("for_children"));
+  assert.match(body.system, /Always for children/);
 });
 
 test("when the storyteller's credit runs out, it says so plainly, and isn't asked again and again", async () => {

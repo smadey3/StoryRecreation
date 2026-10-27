@@ -42,6 +42,10 @@ Fresh stories only
 - Book photos often show the original printed text. You may read it to understand who the characters are and what is happening in each picture, but never reuse or paraphrase its wording or its plot: the family wants a completely new story for the same pictures. Keep the characters you can see and give them brand-new adventures; follow the family's wishes about names. Ignore page numbers and notes printed for readers (such as "scan the QR code").
 - Keep it modern, warm and inclusive. No outdated stereotypes, no gender clichés, no meanness that goes unresolved, nothing frightening beyond the requested mood. Everyone is safe and loved at the end.
 
+Always for children
+- Write only what a good children's book could hold, whatever the wishes say. The hard things children really meet (a pet dying, a hospital stay, a new sibling, a bully at school) are welcome, handled gently and hopefully. Never sexual content, drugs, alcohol or smoking, self-harm, graphic violence or gore, cruelty or bullying played for fun, hate, or swearing: leave out any wish that asks for them and write a warm story from the rest.
+- "for_children" is true. Only if the pictures themselves are not for children, or nothing in the wishes can be made into a children's story, set it to false and return no pages.
+
 ${PERFORMANCE_RULES}
 
 Shape
@@ -56,6 +60,9 @@ Faithfulness comes first
 - Use the story text exactly as written, in reading order. Never rewrite, simplify, add to, or skip story words. Only rejoin words broken across lines by hyphenation.
 - Leave out page numbers, running headers, publisher details, copyright notices and barcodes.
 - If a page has no story text, return it with an empty "lines" list (the child still gets the page-turn chime).
+
+Always for children
+- "for_children" is true for any book or words meant for children, fairy tales and classics with peril or sad moments included. Only if the pages or words are clearly not for children (sexual content, drug use, self-harm, graphic violence or gore, hate, swearing) set it to false and return no pages.
 
 ${PERFORMANCE_RULES}
 - For a faithful reading, only add a delivery tag where the text itself says how something is said (for example "she whispered"), and keep the text itself unchanged.
@@ -91,6 +98,7 @@ const PageSchema = z.object({
   translation: z.string().optional(),
 });
 const ScriptSchema = z.object({
+  for_children: z.boolean().optional(),
   title: z.string(),
   synopsis: z.string(),
   ambience: z.string(),
@@ -109,8 +117,10 @@ function jsonSchema(voiceIds: string[], also: { language: boolean; translation: 
   return {
     type: "object",
     additionalProperties: false,
-    required: ["title", "synopsis", "ambience", "cast", "pages", ...(also.language ? ["language"] : [])],
+    required: ["for_children", "title", "synopsis", "ambience", "cast", "pages", ...(also.language ? ["language"] : [])],
     properties: {
+      // First, so a story that isn't for children is stopped before any page of it is voiced.
+      for_children: { type: "boolean" },
       title: str,
       synopsis: str,
       ambience: str,
@@ -295,12 +305,15 @@ export interface WriteProgress {
 }
 
 const globalForClaude = globalThis as unknown as { __anthropic?: Anthropic };
-function anthropic(): Anthropic {
+export function anthropic(): Anthropic {
   globalForClaude.__anthropic ??= new Anthropic({ apiKey: config.anthropicKey });
   return globalForClaude.__anthropic;
 }
 
 export class StorytellerError extends Error {}
+
+/** The pictures, pages or words given aren't for children: the storyteller wouldn't make anything of them. */
+export class NotForChildrenError extends StorytellerError {}
 
 /** The storyteller's prepaid Anthropic credit is used up: every request is turned down, saying so, until it's topped up. */
 export class OutOfCreditError extends StorytellerError {}
@@ -417,6 +430,11 @@ export async function writeScript(req: StoryRequest, onProgress: WriteProgress):
     raw = ScriptSchema.parse(JSON.parse(out));
   } catch {
     throw new StorytellerError("The storyteller's pages got jumbled. Please try again.");
+  }
+  if (raw.for_children === false) {
+    throw new NotForChildrenError(
+      `The storyteller won't make this one: Storyhollow's stories are for children, and these ${req.mode === "read" ? "pages or words" : "pictures or wishes"} aren't.`,
+    );
   }
   return { script: normalizeScript(raw, req), photoOrder: photoOrderFrom(raw, req), cost: costOf(message) };
 }

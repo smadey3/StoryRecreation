@@ -332,6 +332,16 @@ humming placeholder voices.
   draws the sketches, then the cover, then each page with the chosen sketches and the cover as reference pictures.
   Every picture is drawn on a purchase a grown-up approved; a job sets each picture's price aside before drawing it
   and stops before it would pass what was approved. See `src/lib/server/illustrator.ts` and `src/lib/server/art.ts`.
+- **Kept for children.** What a family types for the storyteller (a story's idea and wishes, words for *Read to Me*
+  to read aloud, words changed in a story before it's recorded, a voice described) is read first by a small, quick
+  model (`GUARD_MODEL`, Claude Haiku by default; about a tenth of a cent a check), and anything no children's book
+  would hold (sex, drugs or alcohol, self-harm, graphic violence, cruelty played for fun, hate, swearing, or attempts
+  to talk the storyteller out of its rules) is turned down before anything is written or spent, while the hard things
+  children meet (a pet dying, a hospital stay, a bully at school) stay welcome, handled gently. The storyteller keeps
+  the same rules, and says (`for_children`, first in its answer, so no page is voiced) when the photos or a book's
+  pages themselves aren't for children. Without the storyteller, a plain screen of unmistakable words stands in. The
+  Grown-ups' corner lists everything turned down, with who asked (*Kept for children*). See
+  `src/lib/server/guard.ts`.
 - **What things cost** is worked out from each service's reported usage (`src/lib/server/prices.ts`) and kept in
   the database (`src/lib/server/spending.ts`), so estimates follow what the family's stories have really cost.
 - **Conjuring quickly.** ElevenLabs makes four recordings at once (`VOICES_AT_ONCE`, shared by every story being

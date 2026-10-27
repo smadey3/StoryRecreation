@@ -1,5 +1,6 @@
 import { apiCtx, HttpError, readJson, requireGrownup, route } from "@/lib/server/auth";
 import { config } from "@/lib/server/config";
+import { keepForChildren } from "@/lib/server/guard";
 import { designVoicePreviews, elevenLabsReason } from "@/lib/server/performer";
 import { VOICE_SAMPLES, languageOf, speaksLanguage } from "@/lib/shared/languages";
 
@@ -14,6 +15,10 @@ export const POST = route(async (req: Request) => {
   // A voice for stories in another language is made speaking it, so it has a natural accent.
   const language = languageOf(body.language);
   const sample = language === "en" ? body.sampleText : VOICE_SAMPLES[language];
+  await keepForChildren(ctx, "voice", [
+    { label: "The voice described", text: desc },
+    { label: "What it says to show itself off", text: language === "en" ? body.sampleText : null },
+  ]);
   try {
     return Response.json({ previews: await designVoicePreviews(speaksLanguage(desc, language).slice(0, 1000), sample) });
   } catch (err) {

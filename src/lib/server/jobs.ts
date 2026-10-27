@@ -6,6 +6,7 @@ import {
   fileUrl,
   getBook,
   getStoryById,
+  recordTurnedDown,
   listBookCharacters,
   listPageRows,
   nameBookAfterStory,
@@ -19,7 +20,7 @@ import {
 } from "./db";
 import { readImageForModel, storyDir } from "./files";
 import { castableVoices, voiceCatalog } from "./voices";
-import { OutOfCreditError, spotSoundEffects, writeScript, StorytellerError, type StoryRequest } from "./storyteller";
+import { NotForChildrenError, OutOfCreditError, spotSoundEffects, writeScript, StorytellerError, type StoryRequest } from "./storyteller";
 import { demoSoundCues, writeDemoScript } from "./demo-storyteller";
 import { performAmbience, performLines, performSoundEffect, PerformerError } from "./performer";
 import { encodeMp3, floatToPcm16, mixStory, pcm16ToFloat, type Clip, type PlacedEffect } from "./audio";
@@ -63,6 +64,13 @@ function launch(key: string, storyId: string, fn: () => Promise<(() => void) | v
           ? err.message
           : "Something went wrong. Please try again.";
       updateStory(storyId, { status: "error", error: friendly, progress: null });
+      // What the storyteller wouldn't make is shown to the grown-ups, like what was turned down before it began.
+      const story = err instanceof NotForChildrenError ? getStoryById(storyId) : null;
+      if (story) {
+        const s = story.settings;
+        const asked = [s.description, s.text, s.extra].find((t) => t?.trim()) ?? (story.mode === "read" ? `Reading “${story.title}”` : "Photos for a new story");
+        recordTurnedDown(story.householdId, { profileId: story.profileId, place: "pictures", kind: "pictures, pages or wishes that aren't for children", asked });
+      }
       // Out of storyteller credit has an email of its own, already sent.
       if (!(err instanceof OutOfCreditError)) void alertStoryFailed(storyId, friendly).catch(() => undefined);
     })

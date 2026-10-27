@@ -4,6 +4,7 @@ import { removeDir, storyDir } from "@/lib/server/files";
 import { isRunning, resumeLostStory, withPlaceInLine } from "@/lib/server/jobs";
 import { artBusy, drawnBeforeUrls, resumeLostArt } from "@/lib/server/art";
 import { pictureSpendForStory } from "@/lib/server/spending";
+import { keepForChildren } from "@/lib/server/guard";
 import type { StoryScript } from "@/lib/shared/types";
 
 export const GET = route(async (_req: Request, ctx: RouteContext<"/api/stories/[id]">) => {
@@ -68,6 +69,12 @@ export const PATCH = route(async (req: Request, ctx: RouteContext<"/api/stories/
   }
   const title = (body.title ?? script?.title ?? story.title).trim().slice(0, 120) || story.title;
   if (script) script.title = title;
+  // Words the family changed are checked before they're kept (and so before they could be recorded).
+  const before = new Set([story.title, story.synopsis ?? "", ...(story.script?.cast.flatMap((m) => [m.name, m.description]) ?? []), ...(story.script?.pages.flatMap((p) => p.lines.map((l) => l.text)) ?? [])]);
+  const changed = [title, script?.synopsis ?? "", ...(script?.cast.flatMap((m) => [m.name, m.description]) ?? []), ...(script?.pages.flatMap((p) => p.lines.map((l) => l.text)) ?? [])].filter(
+    (t) => t.trim() && !before.has(t),
+  );
+  await keepForChildren(c, "edit", [{ label: "Words changed in the story", text: changed.join("\n") }], story.settings.age);
   updateStory(id, { title, script, synopsis: script?.synopsis ?? story.synopsis });
   return Response.json({ story: getStory(c.household.id, id) });
 });

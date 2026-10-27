@@ -379,6 +379,20 @@ export interface FamilyVoice {
   createdAt: number;
 }
 
+/** Something the storyteller turned down because it wasn't for children. */
+export interface TurnedDown {
+  id: string;
+  /** Where it was asked: a new story, words to read aloud, words changed before recording, a voice described. */
+  place: "story" | "words" | "edit" | "voice" | "pictures";
+  /** What kind of thing, in a few words ("drugs, alcohol or smoking"). */
+  kind: string;
+  /** A little of what was asked. */
+  asked: string;
+  /** The reader it was asked as, if any. */
+  reader: string | null;
+  createdAt: number;
+}
+
 /** The family's ElevenLabs voice credit this month (one credit is about one letter read aloud). */
 export interface VoiceCredits {
   left: number;

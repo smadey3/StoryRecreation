@@ -12,7 +12,7 @@ import { AlertsPanel } from "@/components/AlertsPanel";
 import { CreditMeter, useCredits } from "@/components/Credits";
 import { forgetOffline } from "@/components/Offline";
 import { formatMoney } from "@/lib/shared/art";
-import type { AppStatus, FamilyVoice, Keepsake, Profile, SpendingSummary } from "@/lib/shared/types";
+import type { AppStatus, FamilyVoice, Keepsake, Profile, SpendingSummary, TurnedDown } from "@/lib/shared/types";
 import type { BackupStatus } from "@/lib/server/offsite";
 import type { AlertsStatus } from "@/lib/server/alerts";
 
@@ -29,6 +29,15 @@ function Fold({ id, title, note, about, children }: { id: string; title: string;
     </details>
   );
 }
+
+/** Where something was turned down, in a few words. */
+const TURNED_DOWN_PLACE: Record<TurnedDown["place"], string> = {
+  story: "A new story",
+  words: "Words to read aloud",
+  edit: "Words changed in a story",
+  voice: "A voice described",
+  pictures: "A story's pictures or pages",
+};
 
 /** Open a section and bring it into view (from the line at the top, or a link to /grownups#section). */
 function openFold(id: string) {
@@ -52,6 +61,7 @@ export function GrownupsView({
   backups,
   alerts,
   spending,
+  turnedDown,
   status,
   driveKey,
 }: {
@@ -69,6 +79,8 @@ export function GrownupsView({
   backups: BackupStatus | null;
   alerts: AlertsStatus | null;
   spending: SpendingSummary | null;
+  /** What the storyteller turned down because it wasn't for children (grown-ups only). */
+  turnedDown: TurnedDown[] | null;
   status: AppStatus;
   /** The Google key for fetching family videos from Drive links, when it's set up. */
   driveKey: string | null;
@@ -312,6 +324,38 @@ export function GrownupsView({
           )}
         </form>
       </Fold>
+
+      {turnedDown && (
+        <Fold
+          id="for-children"
+          title="Kept for children"
+          note={turnedDown.length ? `${turnedDown.length} turned down` : "Nothing turned down"}
+          about="What the storyteller won't make, and anything it turned down."
+        >
+          <p className="muted" style={{ margin: 0 }}>
+            Every story idea, the words <i>Read to Me</i> is asked to read, words changed in a story and voices described are checked
+            first, and the storyteller keeps the same rules. Hard things children meet (a pet dying, a hospital stay, a bully at school) are
+            handled gently, but nothing a children&apos;s book wouldn&apos;t hold is made: sex, drugs or alcohol, self-harm, graphic
+            violence, cruelty played for fun, hate or swearing. Anything turned down is listed here, with who asked.
+          </p>
+          {turnedDown.length > 0 && (
+            <ul className="spend-list turned-down">
+              {turnedDown.map((t) => (
+                <li key={t.id}>
+                  <span className="small muted">
+                    {mounted ? new Date(t.createdAt).toLocaleDateString([], { month: "short", day: "numeric" }) : ""}
+                  </span>
+                  <span>
+                    <b>{TURNED_DOWN_PLACE[t.place]}</b>
+                    {t.reader ? ` · as ${t.reader}` : ""} · {t.kind}
+                    <span className="small muted turned-down-asked">“{t.asked}”</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Fold>
+      )}
 
       {spending && (
         <Fold

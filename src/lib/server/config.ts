@@ -31,6 +31,10 @@ export const config = {
   get storyModel(): string {
     return process.env.STORY_MODEL || "claude-opus-5-5";
   },
+  /** The quick check that what a family asks for is for children: a small, fast model is plenty. */
+  get guardModel(): string {
+    return process.env.GUARD_MODEL || "claude-haiku-5-5";
+  },
   get voiceModel(): string {
     return process.env.VOICE_MODEL || "eleven_v4";
   },

@@ -21,6 +21,7 @@ import type {
   StoryProgress,
   StoryScript,
   StorySettings,
+  TurnedDown,
   StoryStatus,
   StoryTimeline,
 } from "@/lib/shared/types";
@@ -229,6 +230,19 @@ CREATE TABLE IF NOT EXISTS spending (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS spending_household ON spending (household_id, created_at);
+
+-- What the storyteller turned down because it wasn't for children: where, what kind of thing, a little of what was
+-- asked, and for which reader, so the grown-ups can see.
+CREATE TABLE IF NOT EXISTS turned_down (
+  id TEXT PRIMARY KEY,
+  household_id TEXT NOT NULL REFERENCES households(id) ON DELETE CASCADE,
+  profile_id TEXT,
+  place TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  asked TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS turned_down_household ON turned_down (household_id, created_at);
 
 -- How long the slow work (writing, recording, pictures) really took, beside what its rule of thumb said, both in
 -- seconds: later waits are judged from it. Only the latest of each kind are kept.
@@ -1338,6 +1352,32 @@ export interface AlertRecord {
   sentAt: number;
   ok: boolean;
   error: string | null;
+}
+
+// ------------------------------------------------------------ turned down (not for children)
+
+export function recordTurnedDown(householdId: string, t: { profileId: string | null; place: TurnedDown["place"]; kind: string; asked: string }) {
+  db()
+    .prepare("INSERT INTO turned_down (id, household_id, profile_id, place, kind, asked, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
+    .run(newId(), householdId, t.profileId, t.place, t.kind, t.asked.replace(/\s+/g, " ").trim().slice(0, 160), Date.now());
+}
+
+/** The latest things turned down, newest first, with who asked. */
+export function listTurnedDown(householdId: string, limit = 20): TurnedDown[] {
+  const rows = db()
+    .prepare(
+      `SELECT t.id, t.place, t.kind, t.asked, t.created_at, p.name AS reader FROM turned_down t
+       LEFT JOIN profiles p ON p.id = t.profile_id WHERE t.household_id = ? ORDER BY t.created_at DESC LIMIT ?`,
+    )
+    .all(householdId, limit) as Row[];
+  return rows.map((r) => ({
+    id: r.id as string,
+    place: r.place as TurnedDown["place"],
+    kind: r.kind as string,
+    asked: r.asked as string,
+    reader: (r.reader as string | null) ?? null,
+    createdAt: r.created_at as number,
+  }));
 }
 
 export function recordAlert(a: { kind: string; key: string; subject: string; ok: boolean; error?: string }) {
