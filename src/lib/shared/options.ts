@@ -36,10 +36,10 @@ export const MOODS: Record<Mood, { label: string; emoji: string; direction: stri
       "An exciting quest with a little peril that always feels safe, clever problem-solving and a triumphant, heart-lifting ending.",
   },
   mystery: {
-    label: "Gentle mystery",
+    label: "Mystery",
     emoji: "🔍",
     direction:
-      "A small, cozy mystery with clues hidden in the pictures, a curious hero who notices things, and a surprising, kind solution.",
+      "A real mystery to solve: a puzzling problem, clues along the way that a sharp listener can spot (and in the pictures, when there are some), a red herring or two, a curious hero who notices things, and a satisfying \"aha!\" that makes sense of every clue. Exciting but never scary, and kind in the end.",
   },
   heartwarming: {
     label: "Heartwarming",
