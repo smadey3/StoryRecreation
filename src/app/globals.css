@@ -1308,6 +1308,20 @@ a.choice {
   display: grid;
   gap: 8px;
 }
+/* A picture to draw again, chosen in its big view: it, and what should change. */
+.redraw-one {
+  padding: 12px;
+  border: 1px dashed rgba(107, 63, 21, 0.4);
+  border-radius: 12px;
+  background: rgba(255, 252, 240, 0.55);
+}
+.redraw-one-pic {
+  width: 64px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 6px;
+  flex: none;
+}
 /* What the storyteller turned down: where and why, then a little of what was asked. */
 .spend-list.turned-down li {
   grid-template-columns: 1fr;

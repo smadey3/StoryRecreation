@@ -195,6 +195,8 @@ export function Pictures({
   // A note for every picture in the book ("make it daytime"), as it's being typed.
   const [bookNote, setBookNote] = useState(art?.note ?? "");
   const [noteError, setNoteError] = useState<string | null>(null);
+  // A picture chosen in its big view to be drawn again, and what should change about it.
+  const [toRedraw, setToRedraw] = useState<{ page: number; note: string } | null>(null);
   const [skipSketches, setSkipSketches] = useState(false);
   // Who "Sketch everyone" sketches, when the family has changed it (otherwise everyone not sketched yet).
   const [picked, setPicked] = useState<Set<string> | null>(null);
@@ -205,7 +207,10 @@ export function Pictures({
   const [adding, setAdding] = useState<{ id: string; words: string } | null>(null);
   // A photo a character's look is written from: sent once, looked at by the storyteller, and not kept.
   const [describing, setDescribing] = useState<{ id: string; what: string; startedAt: number; seconds: number } | null>(null);
-  const { offerPictures, dialog } = useOffers(story, status, onStory);
+  const { offerPictures, dialog } = useOffers(story, status, (s) => {
+    setToRedraw(null);
+    onStory(s);
+  });
   const each = status.picturePrice;
   const pages = story.script?.pages.length ?? 0;
   const working = Boolean(art && art.status !== "idle");
@@ -462,9 +467,9 @@ export function Pictures({
     }
   };
   /** Pictures to draw (or draw again): a note typed but not yet kept is kept first, so they follow it. */
-  const offerDrawing = async (what: string, pages: number[] | null, seconds: number) => {
+  const offerDrawing = async (what: string, pages: number[] | null, seconds: number, note = "") => {
     if (noteChanged && !(await saveNote())) return;
-    offerPictures(what, pages?.length ?? todo, seconds, `/api/stories/${story.id}/art/draw`, pages ? { pages } : {});
+    offerPictures(what, pages?.length ?? todo, seconds, `/api/stories/${story.id}/art/draw`, pages ? { pages, ...(note.trim() ? { note: note.trim() } : {}) } : {});
   };
   const everyPicture = bookPictures(art.pages.length);
   const redrawBook = () =>
@@ -473,14 +478,20 @@ export function Pictures({
       Array.from({ length: everyPicture }, (_, i) => i),
       drawingSeconds(everyPicture, true, status.illustrator, status.pace?.drawing),
     );
+  // From its big view: say what should change (if anything), then the price.
   const redrawOne = (page: number) => {
     setViewing(null);
-    void offerDrawing(
-      `Redraw ${page === 0 ? "the cover" : `page ${page}`} of “${story.title}”`,
-      [page],
-      drawingSeconds(1, page === 0, status.illustrator, status.pace?.drawing),
-    );
+    setToRedraw({ page, note: "" });
+    setTimeout(() => scrollTo("redraw-one"), 50);
   };
+  const redrawChosen = () =>
+    toRedraw &&
+    void offerDrawing(
+      `Redraw ${toRedraw.page === 0 ? "the cover" : `page ${toRedraw.page}`} of “${story.title}”`,
+      [toRedraw.page],
+      drawingSeconds(1, toRedraw.page === 0, status.illustrator, status.pace?.drawing),
+      toRedraw.note,
+    );
   const drawBook = async () => {
     // A note typed but not yet kept is kept first, so the pictures follow it.
     if (noteChanged && !(await saveNote())) return;
@@ -753,6 +764,40 @@ export function Pictures({
                   <p className="small muted" style={{ margin: 0 }}>
                     Tap one to see it big, or to redraw it. Each page&apos;s picture is also beside its words, below.
                   </p>
+                )}
+                {toRedraw && pictureAt(toRedraw.page) && (
+                  <form
+                    id="redraw-one"
+                    className="redraw-one stack"
+                    style={{ ["--gap" as string]: "8px" }}
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      redrawChosen();
+                    }}
+                  >
+                    <div className="row" style={{ gap: 10, flexWrap: "nowrap", alignItems: "center" }}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={pictureAt(toRedraw.page)!} alt="" className="redraw-one-pic" />
+                      <b>Redraw {toRedraw.page === 0 ? "the cover" : `page ${toRedraw.page}`}</b>
+                    </div>
+                    <input
+                      className="input"
+                      value={toRedraw.note}
+                      onChange={(e) => setToRedraw({ ...toRedraw, note: e.target.value })}
+                      placeholder="What should change? (optional: say, “cut paper, like the other pages”)"
+                      aria-label="What should change"
+                      maxLength={300}
+                      autoFocus
+                    />
+                    <div className="row" style={{ gap: 8 }}>
+                      <button className="btn btn-sm" disabled={busy || working}>
+                        ↻ Redraw · {status.illustrator ? formatMoney(each) : "free"}
+                      </button>
+                      <button type="button" className="btn btn-quiet btn-sm" onClick={() => setToRedraw(null)}>
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
                 )}
               </>
             )}

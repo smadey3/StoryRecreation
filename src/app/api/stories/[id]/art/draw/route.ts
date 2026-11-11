@@ -2,6 +2,7 @@ import { apiCtx, HttpError, readJson, route } from "@/lib/server/auth";
 import { getStory } from "@/lib/server/db";
 import { artBusy, startDrawing, undrawn } from "@/lib/server/art";
 import { illustratorReady } from "@/lib/server/illustrator";
+import { keepForChildren } from "@/lib/server/guard";
 import { picturePrice } from "@/lib/server/prices";
 import { approvePurchase, recordSpend, type Approval } from "@/lib/server/spending";
 
@@ -23,6 +24,8 @@ export const POST = route(async (req: Request, ctx: RouteContext<"/api/stories/[
     : undrawn(art);
   if (asked.length === 0) throw new HttpError(400, "Every picture is already drawn.");
   const note = typeof body.note === "string" ? body.note.trim().slice(0, 300) : "";
+  // What should change goes to the illustrator: it's for children, like everything written for the storyteller.
+  await keepForChildren(c, "pictures", [{ label: "What should change in a picture", text: note || null }], story.settings.age);
 
   const real = illustratorReady();
   const price = (real ? picturePrice() : 0) * asked.length;
