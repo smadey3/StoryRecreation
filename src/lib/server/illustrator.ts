@@ -31,6 +31,8 @@ export interface PictureRequest {
   prompt: string;
   references: Reference[];
   aspect: "4:3" | "1:1";
+  /** How big Google draws it: 2K for a book's pages (the default), 1K for a little example. */
+  size?: "1K" | "2K";
   /** What a stand-in picture shows instead. */
   standIn: { heading: string; caption: string; style: ArtStyle; seed: string };
 }
@@ -72,7 +74,7 @@ export async function drawPicture(req: PictureRequest): Promise<Picture> {
   parts.push({ text: req.prompt });
   const body = JSON.stringify({
     contents: [{ role: "user", parts }],
-    generationConfig: { responseModalities: ["IMAGE"], imageConfig: { aspectRatio: req.aspect, imageSize: "2K" } },
+    generationConfig: { responseModalities: ["IMAGE"], imageConfig: { aspectRatio: req.aspect, imageSize: req.size ?? "2K" } },
   });
 
   // A busy moment (or a dropped connection) is tried once more; Google doesn't charge for a refused request.
@@ -168,7 +170,11 @@ const PALETTES: Record<ArtStyle, { sky: [string, string]; hills: [string, string
   watercolor: { sky: ["#f7efd9", "#cfe3ea"], hills: ["#b9d3a8", "#8fb388"], ink: "#3b2a1e", glow: "#f6d98b" },
   gouache: { sky: ["#ffe7a8", "#f7a679"], hills: ["#e2794f", "#b8433a"], ink: "#3a1d10", glow: "#fff2c4" },
   pencil: { sky: ["#f4ead6", "#e8dcc2"], hills: ["#c9b28a", "#a68b5b"], ink: "#4a3a28", glow: "#f2c46a" },
+  pastel: { sky: ["#1c2a4a", "#3b4f7a"], hills: ["#5b7aa6", "#33496f"], ink: "#f4e9d0", glow: "#ffd98a" },
   papercut: { sky: ["#d9efe9", "#9fcfc4"], hills: ["#4f9a8a", "#2f6b5f"], ink: "#123a33", glow: "#f6e3a1" },
+  felt: { sky: ["#f3e6d6", "#e2c9b0"], hills: ["#9cb27a", "#6f8a52"], ink: "#4a2f24", glow: "#f2b85c" },
+  clay: { sky: ["#f6dcc4", "#e9b796"], hills: ["#8fbf7f", "#5f9a5a"], ink: "#4b2b1f", glow: "#ffd27a" },
+  comic: { sky: ["#fff3c4", "#8fd3f4"], hills: ["#55b85c", "#2e7d3c"], ink: "#111111", glow: "#ffde3b" },
   shadow: { sky: ["#f6b25e", "#c4502f"], hills: ["#1b1210", "#000000"], ink: "#1b1210", glow: "#ffe2a6" },
 };
 

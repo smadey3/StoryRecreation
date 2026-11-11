@@ -32,6 +32,14 @@ export const ART_STYLES: Record<ArtStyle, { label: string; emoji: string; blurb:
       "a colored pencil and wax crayon drawing on toothy paper: every area filled with visible hatching and pencil strokes, slightly wobbly hand-drawn outlines, the paper's texture showing through the color, soft layered tones. Clearly drawn by hand with pencils: not painted, not digital",
     alone: "on plain drawing paper",
   },
+  pastel: {
+    label: "Chalk pastel",
+    emoji: "🖍️",
+    blurb: "Dreamy chalk on dark paper",
+    prompt:
+      "a soft chalk pastel drawing on dark navy-blue paper: glowing colors rubbed and smudged with fingers, visible chalky strokes and grainy texture, the dark paper showing through between the strokes, so light seems to glow out of the dark. Drawn by hand with pastels: not painted, no hard outlines, not digital",
+    alone: "on plain dark blue pastel paper",
+  },
   papercut: {
     label: "Cut paper",
     emoji: "✂️",
@@ -39,6 +47,30 @@ export const ART_STYLES: Record<ArtStyle, { label: string; emoji: string; blurb:
     prompt:
       "a cut-paper collage: every shape cut from flat colored and patterned papers (card, tissue, kraft and hand-painted papers), crisp scissor-cut edges, the pieces layered on top of each other with small drop shadows between the layers. No outlines and no painted shading: it looks like a photograph of real paper pieces glued down",
     alone: "on a plain sheet of colored card",
+  },
+  felt: {
+    label: "Felt & stitches",
+    emoji: "🧶",
+    blurb: "Soft felt, yarn and buttons",
+    prompt:
+      "a handmade felt and fabric collage: every shape cut from soft, fuzzy wool felt and fabric, visible running stitches and blanket stitches around the edges, details embroidered in thread, button eyes, yarn for hair and grass, tufts of needle-felted wool, photographed close up so the fibres show. Real fabric and thread: not painted, not drawn, not digital",
+    alone: "on a plain piece of cream felt",
+  },
+  clay: {
+    label: "Clay",
+    emoji: "🧸",
+    blurb: "Squishy modeling-clay figures",
+    prompt:
+      "a handmade modeling-clay (plasticine) scene photographed like a stop-motion film set: every character and object sculpted from soft, matte clay with visible fingerprints, tool marks and slightly lumpy edges, simple rounded shapes, small bead eyes, soft studio lighting with gentle real shadows and a shallow depth of field. Real clay: not smooth computer 3D, nothing glossy, not plastic toys",
+    alone: "on a plain clay-colored tabletop against a soft plain backdrop",
+  },
+  comic: {
+    label: "Comic",
+    emoji: "💥",
+    blurb: "Bold ink and bright dots",
+    prompt:
+      "a classic comic-book picture: bold black ink outlines with lively brush strokes and pen hatching, flat bright printed colors with halftone dot shading, a dynamic angle and motion lines, like one big panel from a children's comic book, printed on slightly yellowed paper. No panel borders, speech bubbles, sound-effect words or captions. Printed comic look: not painted, not 3D",
+    alone: "on a plain, flat pale background",
   },
   shadow: {
     label: "Shadow puppets",

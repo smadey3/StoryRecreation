@@ -733,6 +733,38 @@ a.choice {
   color: var(--ink-soft);
 }
 
+/* Picture styles: each choice shows the same little scene drawn in it, and the chosen one is shown big beneath. */
+.style-choices .choice {
+  justify-content: flex-start;
+  padding: 10px 10px 14px;
+}
+.style-sample {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border-radius: 9px;
+  margin-bottom: 4px;
+  background: rgba(107, 63, 21, 0.08);
+  box-shadow: 0 1px 4px rgba(60, 30, 10, 0.18);
+}
+.style-example {
+  margin: 0;
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+  text-align: center;
+}
+.style-example img {
+  display: block;
+  width: 100%;
+  max-width: 560px;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border-radius: 12px;
+  box-shadow: 0 6px 18px rgba(60, 30, 10, 0.25);
+}
+
 .chip {
   display: inline-flex;
   align-items: center;

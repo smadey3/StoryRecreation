@@ -576,3 +576,45 @@ test("a character drawn for another of the family's books is offered again, free
   assert.deepEqual(drawnBefore(first.household, second).gwen.map((d) => d.storyId), [first.story]);
   assert.deepEqual(drawnBefore(other.household, second), {}, "nor is a story looked at for a family it isn't theirs");
 });
+
+test("each picture style's example: drawn once, small, the way a page is, and drawn again when the style changes", async () => {
+  process.env.GEMINI_API_KEY = "test-google-key";
+  mode = "ok";
+  const { styleSamples, samplesDrawn, sampleFile, sampleRequest } = await import("@/lib/server/styleSamples");
+  const { ART_STYLES } = await import("@/lib/shared/art");
+  const styles = Object.keys(ART_STYLES) as (keyof typeof ART_STYLES)[];
+  const before = asked.length;
+  const first = styleSamples();
+  assert.ok(first.drawing, "asking starts drawing them");
+  assert.ok(styles.every((s) => first.samples[s] === null), "none is there yet");
+  assert.equal(styleSamples().drawing, true, "asking again doesn't start a second batch");
+  await samplesDrawn();
+  const drawn = asked.slice(before);
+  assert.equal(drawn.length, styles.length, "one picture a style");
+  assert.ok(drawn.every((a) => a.body.generationConfig.imageConfig.imageSize === "1K"), "drawn small");
+  for (const style of styles) {
+    assert.ok(drawn.some((a) => a.body.contents[0].parts.at(-1).text === sampleRequest(style).prompt), `${style} drawn from its own prompt`);
+    assert.ok(sampleRequest(style).prompt.startsWith(`Art style, the most important instruction of all: ${ART_STYLES[style].prompt}.`));
+  }
+  const ready = styleSamples();
+  assert.equal(ready.drawing, false);
+  for (const style of styles) {
+    assert.match(ready.samples[style] ?? "", new RegExp(`^/api/art-styles/${style}/sample\\?v=[0-9a-f]{10}$`));
+    assert.ok(fs.readFileSync(sampleFile(style)!).subarray(0, 2).equals(Buffer.from([0xff, 0xd8])), "kept as a JPEG");
+  }
+  assert.equal(asked.length, before + styles.length, "kept, not drawn again");
+
+  // A style described differently is drawn again, and its old example goes.
+  const old = sampleFile("comic")!;
+  const was = ART_STYLES.comic.prompt;
+  ART_STYLES.comic.prompt = `${was} (with more dots)`;
+  try {
+    assert.equal(styleSamples().samples.comic, null);
+    await samplesDrawn();
+    assert.equal(asked.length, before + styles.length + 1, "only that one");
+    assert.ok(sampleFile("comic"));
+    assert.equal(fs.existsSync(old), false);
+  } finally {
+    ART_STYLES.comic.prompt = was;
+  }
+});
