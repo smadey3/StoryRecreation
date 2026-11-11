@@ -226,6 +226,14 @@ test("the illustrator's prompts: sketches from a description or a child's drawin
   const front = sceneRequest({ title: "T", page: 0, scene: "s", characters: [fairy], sketches: new Map(), cover, style: "shadow", mood: "bedtime", seed: "y" });
   assert.equal(front.references.length, 0, "the cover isn't drawn from itself");
   assert.match(front.prompt, /front cover/);
+  assert.doesNotMatch(front.prompt, /every picture in this book/, "no note for the book, nothing said");
+
+  // A note for the whole book ("make it daytime") goes with every picture, ahead of what its scene says.
+  const daytime = { title: "T", scene: "On a spooky moonlit mountainside", characters: [fairy], sketches: new Map(), cover, style: "papercut" as const, mood: "bedtime" as const, bookNote: "Make it daytime.", seed: "z" };
+  for (const p of [sceneRequest({ ...daytime, page: 0 }), sceneRequest({ ...daytime, page: 3 }), sceneRequest({ ...daytime, page: 3, note: "add a rainbow" })]) {
+    assert.match(p.prompt, /For every picture in this book, the family asked: Make it daytime\. Where the scene above says otherwise, this comes first\./);
+  }
+  assert.match(sceneRequest({ ...daytime, page: 3, note: "add a rainbow" }).prompt, /this comes first\. The family asked for this change: add a rainbow/, "and a redraw's own note after it");
 
   const art = { cover: null, pages: ["stories/x/art/page-01.png", null, null] } as unknown as StoryArt;
   assert.deepEqual(undrawn(art), [0, 2, 3]);

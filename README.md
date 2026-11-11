@@ -71,6 +71,9 @@ a brand-new tale for the very same pictures.
   of your picture books (your children, say) is offered again on the new book, at no cost.
 - **Change any page before it's drawn.** Beside each page's words is what its picture will show; change it in
   your own words ("only two beds"), free, before drawing the book.
+- **A note for the whole book.** Under the art styles, *A note for every picture* ("Make it daytime", "everyone in
+  winter coats") goes with the cover and every page drawn from then on, ahead of what a page's own description says.
+  It's free, kept with the book, and checked like everything written for the storyteller.
 - **The same on every page.** The cover is drawn first, then every page from the chosen sketches and the cover,
   so the characters and colors stay the same all the way through. Redraw any page, with a note about what to change.
 - **You can see it working.** Whatever the illustrator is making shows where it will appear, with how many are

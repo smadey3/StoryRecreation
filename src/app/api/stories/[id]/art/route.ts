@@ -2,6 +2,7 @@ import { apiCtx, HttpError, readJson, requireGrownup, route } from "@/lib/server
 import { changeStoryArt, getStory, updateStory } from "@/lib/server/db";
 import { canWriteStories } from "@/lib/server/config";
 import { startPictureBook, useDrawnBefore } from "@/lib/server/art";
+import { keepForChildren } from "@/lib/server/guard";
 import { ART_STYLES, DEFAULT_ART_STYLE } from "@/lib/shared/art";
 import type { ArtStyle } from "@/lib/shared/types";
 
@@ -22,7 +23,10 @@ export const POST = route(async (req: Request, ctx: RouteContext<"/api/stories/[
   return Response.json({ story: getStory(c.household.id, id) });
 });
 
-/** Change the style, what a character looks like, which sketch is them, or what a picture will show (before it's drawn). */
+/**
+ * Change the style, what a character looks like, which sketch is them, what a picture will show (before it's drawn), or
+ * the family's note for every picture.
+ */
 export const PATCH = route(async (req: Request, ctx: RouteContext<"/api/stories/[id]/art">) => {
   const c = await apiCtx();
   requireGrownup(c);
@@ -35,6 +39,7 @@ export const PATCH = route(async (req: Request, ctx: RouteContext<"/api/stories/
     choose?: { characterId?: unknown; index?: unknown };
     scene?: { page?: unknown; text?: unknown };
     reuse?: { characterId?: unknown; fromStoryId?: unknown };
+    note?: unknown;
   }>(req);
   // A character drawn for another of the family's books, used again (free): copied in, and chosen.
   if (body.reuse) {
@@ -50,10 +55,28 @@ export const PATCH = route(async (req: Request, ctx: RouteContext<"/api/stories/
   if (body.scene && (!Number.isInteger(scenePage) || scenePage < 0 || scenePage > story.art.pages.length || !sceneText)) {
     throw new HttpError(400, "Say what the picture should show.");
   }
+  // A note for every picture in the book ("make it daytime"); an empty one clears it.
+  const note = typeof body.note === "string" ? body.note.trim().slice(0, 300) : undefined;
+  // What the family wrote for the illustrator is for children, like everything written for the storyteller.
+  const art = story.art;
+  const changedLooks = Object.entries(looks)
+    .filter(([cid, look]) => typeof look === "string" && look.trim() && look.trim() !== art.characters.find((ch) => ch.id === cid)?.look)
+    .map(([, look]) => String(look));
+  await keepForChildren(
+    c,
+    "pictures",
+    [
+      { label: "A note for every picture", text: note !== art.note ? note : null },
+      { label: "What a picture will show", text: sceneText || null },
+      { label: "What a character looks like", text: changedLooks.join("\n") || null },
+    ],
+    story.settings.age,
+  );
   changeStoryArt(id, (a) => {
     if (!a) return a;
     return {
       ...a,
+      note: note === undefined ? a.note : note || undefined,
       style: body.style === undefined ? a.style : styleOf(body.style),
       coverScene: body.scene && scenePage === 0 ? sceneText : a.coverScene,
       scenes: body.scene && scenePage > 0 ? a.scenes.map((sc) => (sc.page === scenePage ? { ...sc, scene: sceneText } : sc)) : a.scenes,

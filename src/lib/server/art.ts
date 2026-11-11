@@ -233,7 +233,10 @@ export function sceneRequest(o: {
   cover: Reference | null;
   style: ArtStyle;
   mood: Mood;
+  /** For this picture alone (a redraw). */
   note?: string;
+  /** For every picture in the book. */
+  bookNote?: string;
   seed: string;
 }): PictureRequest {
   const references: Reference[] = [];
@@ -256,6 +259,7 @@ export function sceneRequest(o: {
     who.length && references.length ? "Keep every character's design, colors, proportions and clothes exactly as in their reference picture." : "",
     o.cover && o.page > 0 ? `Match the style, palette and lighting of the cover (reference picture ${references.length}).` : "",
     `Mood: ${MOODS[o.mood].label.toLowerCase()}.`,
+    o.bookNote ? `For every picture in this book, the family asked: ${o.bookNote} Where the scene above says otherwise, this comes first.` : "",
     o.note ? `The family asked for this change: ${o.note}` : "",
     RULES,
   ]
@@ -505,6 +509,7 @@ async function draw(storyId: string, targets: number[], purchaseId: string, note
             style: art.style,
             mood: story.settings.mood,
             note,
+            bookNote: art.note,
             seed: `${storyId}-${target}-${Date.now()}`,
           }),
         )

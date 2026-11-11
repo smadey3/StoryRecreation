@@ -278,6 +278,8 @@ export interface StoryArt {
   characters: ArtCharacter[];
   coverScene: string;
   scenes: ArtScene[];
+  /** The family's note for every picture in the book ("make it daytime"): followed for the cover and every page. */
+  note?: string;
   cover: string | null;
   /** One picture per page (index = page - 1), null until drawn. */
   pages: (string | null)[];

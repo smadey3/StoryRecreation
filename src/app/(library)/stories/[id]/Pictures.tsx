@@ -181,6 +181,9 @@ export function Pictures({
   const art = story.art;
   const [style, setStyle] = useState<ArtStyle>(art?.style ?? story.settings.artStyle ?? DEFAULT_ART_STYLE);
   const [looks, setLooks] = useState<Record<string, string>>({});
+  // A note for every picture in the book ("make it daytime"), as it's being typed.
+  const [bookNote, setBookNote] = useState(art?.note ?? "");
+  const [noteError, setNoteError] = useState<string | null>(null);
   const [skipSketches, setSkipSketches] = useState(false);
   // Who "Sketch everyone" sketches, when the family has changed it (otherwise everyone not sketched yet).
   const [picked, setPicked] = useState<Set<string> | null>(null);
@@ -435,7 +438,21 @@ export function Pictures({
       onStory((await api.patch<{ story: Story }>(`/api/stories/${story.id}/art`, { style: s })).story);
     });
 
-  const drawBook = () =>
+  const noteChanged = bookNote.trim() !== (art.note ?? "");
+  /** Keep the note (said beside it if it can't be). Whether it was kept. */
+  const saveNote = async () => {
+    setNoteError(null);
+    try {
+      onStory((await api.patch<{ story: Story }>(`/api/stories/${story.id}/art`, { note: bookNote.trim() })).story);
+      return true;
+    } catch (err) {
+      setNoteError(err instanceof Error ? err.message : "That note couldn't be kept.");
+      return false;
+    }
+  };
+  const drawBook = async () => {
+    // A note typed but not yet kept is kept first, so the pictures follow it.
+    if (noteChanged && !(await saveNote())) return;
     offerPictures(
       drawn === 0 ? `The cover and ${art.pages.length} pages of “${story.title}”` : `The ${todo} ${todo === 1 ? "picture" : "pictures"} still to draw`,
       todo,
@@ -443,6 +460,7 @@ export function Pictures({
       `/api/stories/${story.id}/art/draw`,
       {},
     );
+  };
 
   const isHero = (c: ArtCharacter) => heroes.some((h) => h.toLowerCase() === c.name.toLowerCase());
 
@@ -712,6 +730,46 @@ export function Pictures({
                   </button>
                 ))}
               </div>
+            )}
+            {!drawingBook && (
+              <form
+                className="book-note stack"
+                style={{ ["--gap" as string]: "4px" }}
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (noteChanged) void run(saveNote);
+                }}
+              >
+                <label className="small" htmlFor="book-note">
+                  A note for every picture <span className="muted">(optional)</span>
+                </label>
+                <div className="row" style={{ gap: 8, flexWrap: "nowrap" }}>
+                  <input
+                    id="book-note"
+                    className="input"
+                    value={bookNote}
+                    onChange={(e) => setBookNote(e.target.value)}
+                    placeholder="Make it daytime"
+                    maxLength={300}
+                    disabled={busy || working}
+                  />
+                  {noteChanged && (
+                    <button className="btn btn-sm" disabled={busy || working}>
+                      {bookNote.trim() ? "Save" : "Clear"}
+                    </button>
+                  )}
+                </div>
+                {noteError && (
+                  <span className="small notice notice-error" role="alert" style={{ margin: 0 }}>
+                    {noteError}
+                  </span>
+                )}
+                {art.note && !noteChanged && (
+                  <span className="small muted">
+                    ✓ The illustrator follows it for the cover and every page{drawn > 0 ? " drawn from now on (to change one already drawn, tap ↻ beside it)" : ""}.
+                  </span>
+                )}
+              </form>
             )}
             {drawingBook && job && (
               <WaitLine
