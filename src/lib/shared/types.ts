@@ -198,7 +198,19 @@ export interface StoryTimeline {
   pages: TimelinePage[];
 }
 
-export type ArtStyle = "watercolor" | "gouache" | "pencil" | "pastel" | "papercut" | "felt" | "clay" | "comic" | "shadow";
+export type ArtStyle =
+  | "watercolor"
+  | "gouache"
+  | "pencil"
+  | "pastel"
+  | "block"
+  | "papercut"
+  | "felt"
+  | "clay"
+  | "glass"
+  | "cartoon"
+  | "comic"
+  | "shadow";
 
 /** A character the illustrator draws, and the sketches the family chose between. */
 export interface ArtCharacter {

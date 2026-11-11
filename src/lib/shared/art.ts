@@ -40,12 +40,20 @@ export const ART_STYLES: Record<ArtStyle, { label: string; emoji: string; blurb:
       "a soft chalk pastel drawing on dark navy-blue paper: glowing colors rubbed and smudged with fingers, visible chalky strokes and grainy texture, the dark paper showing through between the strokes, so light seems to glow out of the dark. Drawn by hand with pastels: not painted, no hard outlines, not digital",
     alone: "on plain dark blue pastel paper",
   },
+  block: {
+    label: "Block print",
+    emoji: "🪵",
+    blurb: "Bold carved lines, a few inks",
+    prompt:
+      "a hand-carved linocut block print: bold shapes printed in just three or four flat inks on cream paper, carved gouge marks and lines for texture, slightly uneven ink with speckles where the ink missed, colors a little off-register, the print filling the whole picture edge to edge and seen straight on. Printed by hand: no gradients, no soft shading, no fine painted detail",
+    alone: "on plain cream printing paper",
+  },
   papercut: {
     label: "Cut paper",
     emoji: "✂️",
     blurb: "Layered paper collage",
     prompt:
-      "a cut-paper collage: every shape cut from flat colored and patterned papers (card, tissue, kraft and hand-painted papers), crisp scissor-cut edges, the pieces layered on top of each other with small drop shadows between the layers. No outlines and no painted shading: it looks like a photograph of real paper pieces glued down",
+      "a cut-paper collage: every shape cut from flat colored and patterned papers (card, tissue, kraft and hand-painted papers), crisp scissor-cut edges, the pieces layered on top of each other with small drop shadows between the layers. No outlines and no painted shading: it looks like real paper pieces glued down, photographed flat from straight above, with the collage filling the whole picture edge to edge (no table, border or edge of the sheet showing, nothing tilted or at an angle)",
     alone: "on a plain sheet of colored card",
   },
   felt: {
@@ -53,7 +61,7 @@ export const ART_STYLES: Record<ArtStyle, { label: string; emoji: string; blurb:
     emoji: "🧶",
     blurb: "Soft felt, yarn and buttons",
     prompt:
-      "a handmade felt and fabric collage: every shape cut from soft, fuzzy wool felt and fabric, visible running stitches and blanket stitches around the edges, details embroidered in thread, button eyes, yarn for hair and grass, tufts of needle-felted wool, photographed close up so the fibres show. Real fabric and thread: not painted, not drawn, not digital",
+      "a handmade felt and fabric collage: every shape cut from soft, fuzzy wool felt and fabric, visible running stitches and blanket stitches around the edges, details embroidered in thread, button eyes, yarn for hair and grass, tufts of needle-felted wool, photographed flat from straight above and close up so the fibres show, with the felt scene filling the whole picture edge to edge (no table, border or edge of the fabric showing, nothing tilted or at an angle). Real fabric and thread: not painted, not drawn, not digital",
     alone: "on a plain piece of cream felt",
   },
   clay: {
@@ -64,12 +72,28 @@ export const ART_STYLES: Record<ArtStyle, { label: string; emoji: string; blurb:
       "a handmade modeling-clay (plasticine) scene photographed like a stop-motion film set: every character and object sculpted from soft, matte clay with visible fingerprints, tool marks and slightly lumpy edges, simple rounded shapes, small bead eyes, soft studio lighting with gentle real shadows and a shallow depth of field. Real clay: not smooth computer 3D, nothing glossy, not plastic toys",
     alone: "on a plain clay-colored tabletop against a soft plain backdrop",
   },
-  comic: {
-    label: "Comic",
-    emoji: "💥",
-    blurb: "Bold ink and bright dots",
+  glass: {
+    label: "Stained glass",
+    emoji: "🪟",
+    blurb: "Glowing jewel colors",
     prompt:
-      "a classic comic-book picture: bold black ink outlines with lively brush strokes and pen hatching, flat bright printed colors with halftone dot shading, a dynamic angle and motion lines, like one big panel from a children's comic book, printed on slightly yellowed paper. No panel borders, speech bubbles, sound-effect words or captions. Printed comic look: not painted, not 3D",
+      "a stained-glass window: the whole picture is made of pieces of colored glass in rich jewel tones, each piece held by thick dark lead lines, light shining through so the colors glow, small streaks and bubbles in the glass, faces and fine details painted simply onto the glass. The glass fills the whole picture edge to edge, seen straight on (no window frame, wall or room showing). Glass and lead only: no soft shading, not a painting of a scene",
+    alone: "against plain pale glass",
+  },
+  cartoon: {
+    label: "Cartoon",
+    emoji: "📺",
+    blurb: "Bright, bouncy and funny",
+    prompt:
+      "a bright, playful cartoon: clean, confident outlines of even thickness, flat cheerful colors with simple cel shading, big expressive eyes and bouncy, exaggerated proportions, like a modern animated children's TV show. Simple and bold: no painterly texture, no hatching, not realistic, not 3D",
+    alone: "on a plain, flat pale background",
+  },
+  comic: {
+    label: "Comic book",
+    emoji: "💥",
+    blurb: "Bold ink, bright colors and dots",
+    prompt:
+      "a page from a classic printed comic book: thick black inked outlines, heavy solid black shadows, bold saturated primary colors printed flat, big visible halftone (Ben-Day) dots in the shading and the sky, a dramatic angle, speed lines and starburst glows around bright lights, on the slightly grainy, yellowed paper of an old comic book. One single big panel filling the whole picture: no panel borders, speech bubbles, sound-effect words or captions. A bold pop-art comic book look: not a gentle storybook illustration, not watercolor, not a pencil sketch, not 3D",
     alone: "on a plain, flat pale background",
   },
   shadow: {
