@@ -2821,6 +2821,19 @@ body.lights-out-active {
 .player.lights-out .page-frame {
   opacity: 0.28;
 }
+/* In the big picture the frame covers the whole page, so it stays solid: the picture inside it is what's dimmed
+   (a see-through frame would show the words and buttons beneath through the picture). */
+.player.lights-out.big .page-frame {
+  opacity: 1;
+}
+.player.lights-out.big .page-frame > * {
+  opacity: 0.28;
+}
+.player.lights-out .big-label {
+  background: #0a0302;
+  border: 1px solid #2a0d06;
+  box-shadow: none;
+}
 .player.lights-out .scrubber,
 .player.lights-out .page-badge {
   opacity: 0.35;
