@@ -12,7 +12,7 @@ export type StoryMode = "create" | "read";
 
 export type StoryStatus = "writing" | "draft" | "recording" | "ready" | "error";
 
-export type Mood = "bedtime" | "silly" | "adventure" | "mystery" | "heartwarming" | "spooky";
+export type Mood = "heartwarming" | "silly" | "adventure" | "mystery" | "magic" | "rhyme" | "feelings" | "spooky";
 export type LengthPreset = "short" | "medium" | "long";
 export type AgeBand = "2-3" | "4-5" | "6-8" | "9-12";
 export type ChimeStyle = "bell" | "sparkle" | "windchime";

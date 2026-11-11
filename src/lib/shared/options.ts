@@ -17,11 +17,11 @@ export const LENGTHS: Record<LengthPreset, { label: string; minutes: number; blu
 };
 
 export const MOODS: Record<Mood, { label: string; emoji: string; direction: string }> = {
-  bedtime: {
-    label: "Cozy bedtime",
-    emoji: "🌙",
+  heartwarming: {
+    label: "Heartwarming",
+    emoji: "💛",
     direction:
-      "A soothing bedtime story. Warm and gentle, with the energy winding down page by page until the last page feels sleepy, safe and quiet.",
+      "Tender and emotional in a good way: friendship, belonging, kindness, and an ending that feels like a hug.",
   },
   silly: {
     label: "Silly & giggly",
@@ -41,11 +41,23 @@ export const MOODS: Record<Mood, { label: string; emoji: string; direction: stri
     direction:
       "A real mystery to solve: a puzzling problem, clues along the way that a sharp listener can spot (and in the pictures, when there are some), a red herring or two, a curious hero who notices things, and a satisfying \"aha!\" that makes sense of every clue. Exciting but never scary, and kind in the end.",
   },
-  heartwarming: {
-    label: "Heartwarming",
-    emoji: "💛",
+  magic: {
+    label: "Fairy-tale magic",
+    emoji: "✨",
     direction:
-      "Tender and emotional in a good way: friendship, belonging, kindness, and an ending that feels like a hug.",
+      "A fairy tale full of wonder: wishes and spells, an enchanted forest or castle, talking animals, a magical helper and a touch of \"once upon a time\", with a kind heart rewarded and a happily-ever-after ending.",
+  },
+  rhyme: {
+    label: "Rhyme time",
+    emoji: "🎵",
+    direction:
+      "Told all the way through in bouncy rhyming verse (in the story's own language) that's a joy to read aloud: a steady, singable rhythm, rhymes that land naturally (never a made-up or forced word just to rhyme), and a short refrain that comes back again and again so the listener can join in.",
+  },
+  feelings: {
+    label: "Big feelings",
+    emoji: "🫶",
+    direction:
+      "Helps a child with a big feeling or a big change (the family's idea says which: a first day at school, a new sibling, being scared of the dark, missing someone, a friendship gone wrong). The hero feels it honestly, the feeling is named and understood, someone kind helps, a small, doable way to cope is shown, and the ending leaves the listener feeling understood, safe and a little braver.",
   },
   spooky: {
     label: "Spooky-ish",
@@ -54,6 +66,10 @@ export const MOODS: Record<Mood, { label: string; emoji: string; direction: stri
       "Delightfully spooky but never frightening: creaky doors, friendly ghosts, shadows that turn out to be something lovely. Always reassuring.",
   },
 };
+
+/** A kind of story still offered: one no longer offered (or never known) is the default. */
+export const moodOf = (value: unknown): Mood =>
+  typeof value === "string" && Object.prototype.hasOwnProperty.call(MOODS, value) ? (value as Mood) : "heartwarming";
 
 export const AGES: Record<AgeBand, { label: string; guidance: string }> = {
   "2-3": {
@@ -132,7 +148,7 @@ export function defaultSettings(overrides: Partial<StorySettings> = {}): StorySe
   return {
     source: "book",
     length: "medium",
-    mood: "bedtime",
+    mood: "heartwarming",
     age: "4-5",
     heroes: [],
     lesson: "",

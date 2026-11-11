@@ -25,7 +25,7 @@ export function sampleRequest(style: ArtStyle): PictureRequest {
     sketches: new Map(),
     cover: null,
     style,
-    mood: "bedtime",
+    mood: "heartwarming",
     seed: `sample-${style}`,
   });
   return { ...req, size: "1K" };

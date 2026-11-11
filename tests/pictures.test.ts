@@ -228,13 +228,13 @@ test("the illustrator's prompts: sketches from a description or a child's drawin
   assert.equal(later.references.length, 3, "Gwendolyn's sketch, the cover, then a page already drawn");
   assert.match(later.prompt, /Reference picture 3 is another page of this same book: make this picture look made exactly the same way/);
   assert.match(page.prompt, /The family asked for this change: make her even lumpier/);
-  const front = sceneRequest({ title: "T", page: 0, scene: "s", characters: [fairy], sketches: new Map(), cover, style: "shadow", mood: "bedtime", seed: "y" });
+  const front = sceneRequest({ title: "T", page: 0, scene: "s", characters: [fairy], sketches: new Map(), cover, style: "shadow", mood: "heartwarming", seed: "y" });
   assert.equal(front.references.length, 0, "the cover isn't drawn from itself");
   assert.match(front.prompt, /front cover/);
   assert.doesNotMatch(front.prompt, /every picture in this book/, "no note for the book, nothing said");
 
   // A note for the whole book ("make it daytime") goes with every picture, ahead of what its scene says.
-  const daytime = { title: "T", scene: "On a spooky moonlit mountainside", characters: [fairy], sketches: new Map(), cover, style: "papercut" as const, mood: "bedtime" as const, bookNote: "Make it daytime.", seed: "z" };
+  const daytime = { title: "T", scene: "On a spooky moonlit mountainside", characters: [fairy], sketches: new Map(), cover, style: "papercut" as const, mood: "heartwarming" as const, bookNote: "Make it daytime.", seed: "z" };
   for (const p of [sceneRequest({ ...daytime, page: 0 }), sceneRequest({ ...daytime, page: 3 }), sceneRequest({ ...daytime, page: 3, note: "add a rainbow" })]) {
     assert.match(p.prompt, /For every picture in this book, the family asked: Make it daytime\. Where the scene above says otherwise, this comes first\./);
   }
@@ -619,11 +619,13 @@ test("each picture style's example: drawn once, small, the way a page is, and dr
   }
 });
 
-test("a book saved in a style that's no longer offered carries on in the default style", async () => {
+test("a book saved in a style (or a kind of story) that's no longer offered carries on in the default", async () => {
   const { changeStoryArt, getStoryArt, getStoryById, updateStory } = await import("@/lib/server/db");
   const { story } = await pictureBook("The Pastel Moon");
   changeStoryArt(story, (art) => ({ ...art!, style: "pastel" as never }));
-  updateStory(story, { settings: { ...getStoryById(story)!.settings, artStyle: "comic" as never } });
+  updateStory(story, { settings: { ...getStoryById(story)!.settings, artStyle: "comic" as never, mood: "bedtime" as never } });
   assert.equal(getStoryArt(story)!.style, "watercolor");
   assert.equal(getStoryById(story)!.settings.artStyle, "watercolor");
+  // Likewise a kind of story no longer offered (Cozy bedtime).
+  assert.equal(getStoryById(story)!.settings.mood, "heartwarming");
 });

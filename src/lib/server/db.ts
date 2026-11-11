@@ -3,7 +3,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { config } from "./config";
-import { DEFAULT_SHELVES, namedByItsStory } from "@/lib/shared/options";
+import { DEFAULT_SHELVES, moodOf, namedByItsStory } from "@/lib/shared/options";
 import { languageOf } from "@/lib/shared/languages";
 import { gutenbergCover } from "@/lib/shared/gutenberg";
 import { pdfOfferFor, pdfSeconds } from "@/lib/shared/pdf";
@@ -305,10 +305,11 @@ function storedArt(value: unknown): StoryArt | null {
   return art && { ...art, style: artStyleOf(art.style) };
 }
 
-/** A story's settings as stored, with a picture style still offered. */
+/** A story's settings as stored, with a kind of story and a picture style still offered. */
 function storedSettings(value: unknown): StorySettings {
   const settings = json<StorySettings>(value)!;
-  return settings?.artStyle ? { ...settings, artStyle: artStyleOf(settings.artStyle) } : settings;
+  if (!settings) return settings;
+  return { ...settings, mood: moodOf(settings.mood), ...(settings.artStyle ? { artStyle: artStyleOf(settings.artStyle) } : {}) };
 }
 
 function json<T>(value: unknown): T | null {
@@ -1279,7 +1280,7 @@ export function lastSettingsForBook(bookId: string, mode: StoryMode): StorySetti
   const r = db()
     .prepare("SELECT settings FROM stories WHERE book_id = ? AND mode = ? ORDER BY created_at DESC LIMIT 1")
     .get(bookId, mode) as Row | undefined;
-  return r ? json<StorySettings>(r.settings) : null;
+  return r ? storedSettings(r.settings) : null;
 }
 
 // --------------------------------------------------------------------- automatic backups
