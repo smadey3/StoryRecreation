@@ -221,7 +221,12 @@ test("the illustrator's prompts: sketches from a description or a child's drawin
   assert.match(page.prompt, /page 2 of the picture book "The Giant Tooth Fairy", in that art style/);
   assert.match(page.prompt, /Gwendolyn looks exactly like reference picture 1/);
   assert.match(page.prompt, /Mia: curly hair and a gap in her smile/, "a character without a sketch is described");
-  assert.match(page.prompt, /Match the style, palette and lighting of the cover \(reference picture 2\)/);
+  assert.match(page.prompt, /Match the art style and palette of the cover \(reference picture 2\)\./, "its style, not its lighting: a page can be another time of day");
+  assert.match(page.prompt, /Whatever the scene, the whole picture is in the art style above: a traditional watercolor/, "and the style said again, last");
+  assert.doesNotMatch(page.prompt, /another page of this same book/, "no page drawn yet, none shown");
+  const later = sceneRequest({ ...page, title: "The Giant Tooth Fairy", page: 4, scene: "s", characters: [fairy, mia], sketches: new Map([["fairy", sketch]]), cover, earlier: sketch, style: "watercolor", mood: "silly", seed: "w" });
+  assert.equal(later.references.length, 3, "Gwendolyn's sketch, the cover, then a page already drawn");
+  assert.match(later.prompt, /Reference picture 3 is another page of this same book: make this picture look made exactly the same way/);
   assert.match(page.prompt, /The family asked for this change: make her even lumpier/);
   const front = sceneRequest({ title: "T", page: 0, scene: "s", characters: [fairy], sketches: new Map(), cover, style: "shadow", mood: "bedtime", seed: "y" });
   assert.equal(front.references.length, 0, "the cover isn't drawn from itself");
@@ -323,8 +328,11 @@ test("drawing a book: the cover first, then each page from the chosen sketch and
   assert.match(parts(first).at(-1)!.text!, /front cover/, "the cover comes first");
   assert.equal(parts(first).filter((p) => p.inlineData).length, 1, "drawn from Gwendolyn's sketch");
   for (const page of asked.slice(1)) {
-    assert.equal(parts(page).filter((p) => p.inlineData).length, 2, "each page: Gwendolyn's sketch and the cover");
+    const n = Number(/page (\d) of/.exec(parts(page).at(-1)!.text!)![1]);
+    // Pages 1 and 2 are drawn together, before any page is; page 3 after, beside a page already drawn.
+    assert.equal(parts(page).filter((p) => p.inlineData).length, n === 3 ? 3 : 2, `page ${n}: Gwendolyn's sketch and the cover${n === 3 ? ", and a page already drawn" : ""}`);
     assert.match(parts(page).at(-1)!.text!, /Gwendolyn looks exactly like reference picture 1.*Mia: curly hair/);
+    if (n === 3) assert.match(parts(page).at(-1)!.text!, /Reference picture 3 is another page of this same book/);
   }
   assert.ok(
     asked.flatMap(parts).every((p) => !p.inlineData || p.inlineData.mimeType === "image/jpeg"),

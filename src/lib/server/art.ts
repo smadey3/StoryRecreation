@@ -10,7 +10,7 @@ import { addToPurchase, getPurchase, recordSpend } from "./spending";
 import { planPictures, StorytellerError, type PicturePlan } from "./storyteller";
 import { demoPicturePlan } from "./demo-storyteller";
 import { expectedSeconds, noteWorkTime } from "./timing";
-import { ART_STYLES, DEFAULT_ART_STYLE, drawingSeconds, formatMoney, planningSeconds } from "@/lib/shared/art";
+import { ART_STYLES, DEFAULT_ART_STYLE, drawingSeconds, formatMoney, isStandIn, planningSeconds } from "@/lib/shared/art";
 import { MOODS } from "@/lib/shared/options";
 import type { ArtCharacter, ArtJob, ArtProblem, ArtStyle, DrawnBefore, Mood, StoryArt } from "@/lib/shared/types";
 
@@ -223,7 +223,10 @@ export function characterPrompt(c: Pick<ArtCharacter, "name" | "look">, style: A
     : `${styleFirst(style)} A character for a children's picture book, made in exactly that art style: ${c.name}${c.look ? `, ${c.look}` : ""}. ${pose} ${RULES}`;
 }
 
-/** The cover (page 0) or a page: its scene, with each character shown from their chosen sketch, and the cover for style. */
+/**
+ * The cover (page 0) or a page: its scene, with each character shown from their chosen sketch, and the cover (and a page
+ * already drawn) for style.
+ */
 export function sceneRequest(o: {
   title: string;
   page: number;
@@ -231,6 +234,8 @@ export function sceneRequest(o: {
   characters: ArtCharacter[];
   sketches: Map<string, Reference>;
   cover: Reference | null;
+  /** A page of this book already drawn (the nearest), so every page looks made the same way. */
+  earlier?: Reference | null;
   style: ArtStyle;
   mood: Mood;
   /** For this picture alone (a redraw). */
@@ -249,6 +254,8 @@ export function sceneRequest(o: {
     return `${c.name}: ${c.look || "as the story describes"}`;
   });
   if (o.cover && o.page > 0) references.push(o.cover);
+  const coverAt = references.length;
+  if (o.earlier && o.page > 0) references.push(o.earlier);
   const prompt = [
     styleFirst(o.style),
     o.page === 0
@@ -257,10 +264,16 @@ export function sceneRequest(o: {
     `Scene: ${o.scene}`,
     who.length ? `Characters: ${who.join("; ")}.` : "",
     who.length && references.length ? "Keep every character's design, colors, proportions and clothes exactly as in their reference picture." : "",
-    o.cover && o.page > 0 ? `Match the style, palette and lighting of the cover (reference picture ${references.length}).` : "",
+    // (The cover's style and palette, but not its lighting: a page can be another time of day.)
+    o.cover && o.page > 0 ? `Match the art style and palette of the cover (reference picture ${coverAt}).` : "",
+    o.earlier && o.page > 0
+      ? `Reference picture ${references.length} is another page of this same book: make this picture look made exactly the same way, with the same materials and finish.`
+      : "",
     `Mood: ${MOODS[o.mood].label.toLowerCase()}.`,
     o.bookNote ? `For every picture in this book, the family asked: ${o.bookNote} Where the scene above says otherwise, this comes first.` : "",
     o.note ? `The family asked for this change: ${o.note}` : "",
+    // Said again last: a scene unlike the cover (a sunny bedroom after a moonlit mountain) is where the style slips.
+    `Whatever the scene, the whole picture is in the art style above: ${ART_STYLES[o.style].prompt}.`,
     RULES,
   ]
     .filter(Boolean)
@@ -486,6 +499,16 @@ async function draw(storyId: string, targets: number[], purchaseId: string, note
     if (ref) sketches.set(c.id, ref);
   }
   let cover = await reference(householdId, art.cover, "the book's cover");
+  // The nearest page already drawn, shown for style (each read once).
+  const pageRefs = new Map<string, Promise<Reference | null>>();
+  const nearestDrawn = (target: number) => {
+    const pages = getStoryArt(storyId)?.pages ?? art.pages;
+    const drawnPages = pages.map((rel, i) => ({ rel, page: i + 1 })).filter((p) => p.rel && p.page !== target && !isStandIn(p.rel));
+    const near = drawnPages.sort((a, b) => Math.abs(a.page - target) - Math.abs(b.page - target) || a.page - b.page)[0];
+    if (!near?.rel) return Promise.resolve(null);
+    if (!pageRefs.has(near.rel)) pageRefs.set(near.rel, reference(householdId, near.rel, "another page of this book"));
+    return pageRefs.get(near.rel)!;
+  };
 
   const missed = new Map<number, Missed>();
   const tried = new Set<number>();
@@ -506,6 +529,7 @@ async function draw(storyId: string, targets: number[], purchaseId: string, note
             characters: ids.map((id) => art.characters.find((c) => c.id === id)).filter((c): c is ArtCharacter => Boolean(c)),
             sketches,
             cover,
+            earlier: target === 0 ? null : await nearestDrawn(target),
             style: art.style,
             mood: story.settings.mood,
             note,
