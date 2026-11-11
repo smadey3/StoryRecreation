@@ -59,7 +59,7 @@ function useSideways(): boolean {
 /** Words that came back run together across two lines ("me!Floss"), spaced as they're read (but not "U.S.A."). */
 const spaced = (word: string) => word.replace(/([.!?…,;:"”)])(?=["“(]?\p{L}\p{L})/gu, "$1 ");
 
-type IconName = "close" | "prev" | "next" | "play" | "pause" | "again" | "bigger" | "smaller";
+type IconName = "close" | "prev" | "next" | "play" | "pause" | "again" | "bigger" | "smaller" | "back10" | "ahead10";
 
 /** Drawn icons, so the controls look the same on every phone (emoji vary). */
 function Icon({ name, size = 22 }: { name: IconName; size?: number }) {
@@ -89,6 +89,25 @@ function Icon({ name, size = 22 }: { name: IconName; size?: number }) {
       <>
         <path d="M5.6 9.2A7 7 0 1 1 5 12" {...line} />
         <path d="M4.6 4.6v4.8h4.8" {...line} />
+      </>
+    ),
+    // A turning arrow around "10": back, or ahead, ten seconds.
+    back10: (
+      <>
+        <path d="M5.2 8.4A8 8 0 1 1 4 12.6" {...line} strokeWidth={2} />
+        <path d="M4.4 3.8v4.8h4.8" {...line} strokeWidth={2} />
+        <text x="12.6" y="15.6" fontSize="8" fontWeight="700" textAnchor="middle" fontFamily="system-ui, sans-serif">
+          10
+        </text>
+      </>
+    ),
+    ahead10: (
+      <>
+        <path d="M18.8 8.4A8 8 0 1 0 20 12.6" {...line} strokeWidth={2} />
+        <path d="M19.6 3.8v4.8h-4.8" {...line} strokeWidth={2} />
+        <text x="11.4" y="15.6" fontSize="8" fontWeight="700" textAnchor="middle" fontFamily="system-ui, sans-serif">
+          10
+        </text>
       </>
     ),
     bigger: <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" {...line} />,
@@ -283,6 +302,16 @@ export function Player({
       seekTo(pages[target].start);
     },
     [pages, seekTo],
+  );
+
+  /** Back or ahead some seconds (a word missed, a bit to skip), the page turns kept in step as a page jump keeps them. */
+  const skip = useCallback(
+    (seconds: number) => {
+      const at = Math.max(0, Math.min(timeline.duration, (audio.current?.currentTime ?? t) + seconds));
+      released.current = new Set(Array.from({ length: pageAt(pages, at) }, (_, k) => k));
+      seekTo(at);
+    },
+    [pages, seekTo, t, timeline.duration],
   );
 
   const play = useCallback(() => {
@@ -565,6 +594,9 @@ export function Player({
             <button className="icon-btn" onClick={() => goPage(idx - 1)} disabled={idx === 0} aria-label="Previous page">
               <Icon name="prev" />
             </button>
+            <button className="icon-btn" onClick={() => skip(-10)} aria-label="Back 10 seconds" title="Back 10 seconds">
+              <Icon name="back10" size={26} />
+            </button>
             {playing ? (
               <button className={`big-play ${loading ? "loading" : ""}`} onClick={pause} aria-label={loading ? "Loading the story (tap to pause)" : "Pause"}>
                 <Icon name="pause" size={32} />
@@ -574,6 +606,9 @@ export function Player({
                 <Icon name={ended ? "again" : "play"} size={34} />
               </button>
             )}
+            <button className="icon-btn" onClick={() => skip(10)} aria-label="Ahead 10 seconds" title="Ahead 10 seconds">
+              <Icon name="ahead10" size={26} />
+            </button>
             <button className="icon-btn" onClick={() => goPage(idx + 1)} disabled={idx >= pages.length - 1} aria-label="Next page">
               <Icon name="next" />
             </button>
@@ -603,6 +638,9 @@ export function Player({
         <button className="icon-btn" onClick={() => goPage(idx - 1)} disabled={idx === 0} aria-label="Previous page">
           <Icon name="prev" />
         </button>
+        <button className="icon-btn" onClick={() => skip(-10)} aria-label="Back 10 seconds" title="Back 10 seconds">
+          <Icon name="back10" size={26} />
+        </button>
         {playing ? (
           <button className={`big-play ${loading ? "loading" : ""}`} onClick={pause} aria-label={loading ? "Loading the story (tap to pause)" : "Pause"}>
             <Icon name="pause" size={38} />
@@ -612,6 +650,9 @@ export function Player({
             <Icon name={ended ? "again" : "play"} size={40} />
           </button>
         )}
+        <button className="icon-btn" onClick={() => skip(10)} aria-label="Ahead 10 seconds" title="Ahead 10 seconds">
+          <Icon name="ahead10" size={26} />
+        </button>
         <button className="icon-btn" onClick={() => goPage(idx + 1)} disabled={idx >= pages.length - 1} aria-label="Next page">
           <Icon name="next" />
         </button>

@@ -2453,8 +2453,19 @@ button.step:hover {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 22px;
+  gap: clamp(6px, 3vw, 22px);
   margin-top: 22px;
+}
+/* Five buttons across a phone: a little smaller, so they all fit. */
+@media (max-width: 440px) {
+  .controls .icon-btn {
+    width: 44px !important;
+    height: 44px !important;
+  }
+  .controls .big-play {
+    width: 74px;
+    height: 74px;
+  }
 }
 .controls .icon-btn {
   width: 52px;
@@ -2671,7 +2682,7 @@ button.step:hover {
   }
   .controls {
     margin-top: 14px;
-    gap: 18px;
+    gap: clamp(6px, 3vw, 18px);
   }
   .controls .icon-btn {
     width: 48px;
@@ -2772,7 +2783,7 @@ body.big-picture-active {
   position: absolute;
   top: calc(var(--safe-top) + 8px);
   right: max(12px, var(--safe-right));
-  background: rgba(20, 12, 6, 0.6);
+  background: rgba(20, 12, 6, 0.94);
 }
 .big-controls {
   position: absolute;
@@ -2784,9 +2795,9 @@ body.big-picture-active {
   gap: 18px;
   padding: 8px 16px;
   border-radius: 999px;
-  background: rgba(20, 12, 6, 0.55);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
+  /* Solid, so the buttons read clearly over any picture. */
+  background: rgba(20, 12, 6, 0.94);
+  border: 1px solid rgba(245, 220, 154, 0.25);
 }
 .big-controls .big-play {
   width: 62px;
@@ -2818,16 +2829,19 @@ body.lights-out-active {
   color: #5a2412 !important;
   text-shadow: none !important;
 }
+/* The picture is dimmed, not its frame: in the big picture the frame covers the whole page (a see-through frame would
+   show the words and buttons beneath), and "Turn the page", "The End" and "Up next" stay clear on top of it. */
 .player.lights-out .page-frame {
+  box-shadow:
+    0 0 0 8px #0a0302,
+    0 0 0 10px #1f0904;
+}
+.player.lights-out .page-frame > :not(.turn-cue) {
   opacity: 0.28;
 }
-/* In the big picture the frame covers the whole page, so it stays solid: the picture inside it is what's dimmed
-   (a see-through frame would show the words and buttons beneath through the picture). */
-.player.lights-out.big .page-frame {
-  opacity: 1;
-}
-.player.lights-out.big .page-frame > * {
-  opacity: 0.28;
+.player.lights-out .big-controls {
+  background: #0a0302;
+  border-color: #2a0d06;
 }
 .player.lights-out .big-label {
   background: #0a0302;
@@ -2873,7 +2887,7 @@ body.lights-out-active {
   box-shadow: none;
 }
 .player.lights-out .turn-cue {
-  background: #000;
+  background: rgba(0, 0, 0, 0.55);
 }
 .player.lights-out .turn-cue strong {
   color: #6a2a14 !important;
