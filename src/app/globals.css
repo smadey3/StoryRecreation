@@ -749,7 +749,8 @@ a.choice {
   box-shadow: 0 1px 4px rgba(60, 30, 10, 0.18);
 }
 .style-example {
-  margin: 0;
+  /* (Its own margin, or it would undo the room the stack puts above it.) */
+  margin: 22px 0 0;
   display: grid;
   gap: 6px;
   justify-items: center;
