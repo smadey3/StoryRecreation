@@ -15,7 +15,9 @@ export const POST = route(async (req: Request, ctx: RouteContext<"/api/stories/[
   const { id } = await ctx.params;
   const story = getStory(c.household.id, id);
   if (!story) throw new HttpError(404, "That story wasn't found.");
-  if (story.mode !== "create" || story.settings.source !== "idea") throw new HttpError(400, "Pictures are drawn for stories dreamed up from an idea.");
+  if (story.mode !== "create" || (story.settings.source !== "idea" && story.settings.source !== "wild")) {
+    throw new HttpError(400, "Pictures are drawn for stories dreamed up from an idea, or told from your photos.");
+  }
   if (!story.script || story.status === "writing") throw new HttpError(409, "Please wait until the story has been written.");
   if (!canWriteStories()) throw new HttpError(503, "Planning the pictures needs the storyteller (an Anthropic key).", "no_storyteller");
   const { style } = await readJson<{ style?: unknown }>(req);

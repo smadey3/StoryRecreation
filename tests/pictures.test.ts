@@ -629,3 +629,19 @@ test("a book saved in a style (or a kind of story) that's no longer offered carr
   // Likewise a kind of story no longer offered (Cozy bedtime).
   assert.equal(getStoryById(story)!.settings.mood, "heartwarming");
 });
+
+test("a day out told from the family's photos can be a picture book, its pages planned from what each photo shows", async () => {
+  const { sanitizeSettings } = await import("@/lib/server/settings");
+  const { pictureBrief } = await import("@/lib/server/storyteller");
+  // Offered for a day out and for an idea; a book the family owns has its own pictures.
+  assert.deepEqual(
+    (["wild", "idea", "book"] as const).map((source) => sanitizeSettings({ source, pictures: true, artStyle: "felt" }).artStyle ?? null),
+    ["felt", "felt", null],
+  );
+  const day = { ...script, pages: script.pages.map((p) => ({ ...p, picture: p.page === 2 ? "A boy in a green jersey holding a basketball by a red wall" : p.picture })) };
+  const fromPhotos = pictureBrief(day, { description: "", heroes: ["Leo"], mood: "Heartwarming", photos: true });
+  assert.match(fromPhotos, /told from the family's own photos of a real day/);
+  assert.match(fromPhotos, /Page 2 \(the family's photo shows: A boy in a green jersey holding a basketball by a red wall\)/);
+  const fromIdea = pictureBrief(day, { description: "", heroes: [], mood: "Heartwarming" });
+  assert.doesNotMatch(fromIdea, /photo/, "an idea's pages are planned from the words alone");
+});

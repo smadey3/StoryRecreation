@@ -40,8 +40,9 @@ export function sanitizeSettings(input: unknown): StorySettings {
     ambience: Boolean(i.ambience),
     effects: Boolean(i.effects),
     review: i.review === undefined ? d.review : Boolean(i.review),
-    // Pictures are drawn for stories dreamed up from an idea (the others have the family's own pictures).
-    ...(i.pictures && source === "idea"
+    // Pictures are drawn for stories dreamed up from an idea, and for a day out told from the family's photos (a book
+    // they own has its own pictures).
+    ...(i.pictures && (source === "idea" || source === "wild")
       ? { pictures: true, artStyle: pick(i.artStyle, Object.keys(ART_STYLES) as ArtStyle[], DEFAULT_ART_STYLE) }
       : {}),
     ...(classic && Number.isInteger(classic.gutenbergId) && Number.isInteger(classic.chapter)

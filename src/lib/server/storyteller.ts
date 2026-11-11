@@ -671,6 +671,7 @@ Pictures
 - For every page, "scene": one or two sentences describing a single moment to paint: who is where, doing what, the setting, the time of day and the light. Choose the most picturable moment on that page, and show only what has happened by then.
 - "characters": the ids of the characters visible in that picture.
 - Keep places, colors and belongings consistent from page to page.
+- When the story was told from the family's own photos of a real day, each page says what its photo shows: paint that same moment, place and things as a storybook picture, so the book retells their day. The illustrator never sees the photos, so put what matters from them into the words.
 - Never ask for words, letters, signs or speech bubbles in a picture: the words are printed separately.
 - Write the looks, the cover and the scenes in English, whatever language the story is told in: the family reads them, and can change them.`;
 
@@ -734,12 +735,10 @@ export function cleanPicturePlan(script: StoryScript, plan: PicturePlan): Pictur
 }
 
 /** Read a finished story and plan its pictures: who is in them and what each looks like, and what to paint on each page. */
-export async function planPictures(
-  script: StoryScript,
-  family: { description: string; heroes: string[]; mood: string },
-): Promise<{ plan: PicturePlan; cost: number }> {
+/** What the art director reads: the story, what the family asked for, and (for a day out) what each photo shows. */
+export function pictureBrief(script: StoryScript, family: { description: string; heroes: string[]; mood: string; photos?: boolean }): string {
   const cast = new Map(script.cast.map((c) => [c.id, c.name]));
-  const text = [
+  return [
     `"${script.title}": ${script.synopsis}`,
     family.description.trim() ? `What the family said they wanted: ${family.description.trim()}` : "",
     family.heroes.length ? `Heroes (real children): ${family.heroes.join(", ")}` : "",
@@ -748,12 +747,25 @@ export async function planPictures(
       .filter((c) => c.id !== "narrator")
       .map((c) => `- ${c.id}: ${c.name}, ${c.description}`)
       .join("\n")}`,
+    family.photos ? "This story was told from the family's own photos of a real day: each page says what its photo shows." : "",
     script.pages
-      .map((p) => [`Page ${p.page}`, ...p.lines.map((l) => `  ${cast.get(l.speaker) ?? l.speaker}: ${l.text}`)].join("\n"))
+      .map((p) =>
+        [
+          `Page ${p.page}${family.photos && p.picture.trim() ? ` (the family's photo shows: ${p.picture.trim()})` : ""}`,
+          ...p.lines.map((l) => `  ${cast.get(l.speaker) ?? l.speaker}: ${l.text}`),
+        ].join("\n"),
+      )
       .join("\n\n"),
   ]
     .filter(Boolean)
     .join("\n\n");
+}
+
+export async function planPictures(
+  script: StoryScript,
+  family: { description: string; heroes: string[]; mood: string; photos?: boolean },
+): Promise<{ plan: PicturePlan; cost: number }> {
+  const text = pictureBrief(script, family);
   let message: Anthropic.Beta.BetaMessage;
   try {
     message = await patiently(() =>

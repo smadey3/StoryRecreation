@@ -318,7 +318,7 @@ async function plan(storyId: string) {
   const s = story.settings;
   let result: { plan: PicturePlan; cost: number };
   if (config.anthropicKey || !config.demoMode) {
-    result = await planPictures(story.script, { description: s.description, heroes: s.heroes, mood: MOODS[s.mood].label });
+    result = await planPictures(story.script, { description: s.description, heroes: s.heroes, mood: MOODS[s.mood].label, photos: s.source === "wild" });
   } else {
     result = { plan: demoPicturePlan(story.script), cost: 0 };
   }

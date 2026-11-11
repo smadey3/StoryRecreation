@@ -107,7 +107,7 @@ export function Studio({
     setStory((cur) => ({ ...cur, art: next.art, settings: next.settings }));
     void refresh().catch(() => undefined);
   };
-  const canPicture = story.mode === "create" && story.settings.source === "idea" && Boolean(story.script);
+  const canPicture = story.mode === "create" && (story.settings.source === "idea" || story.settings.source === "wild") && Boolean(story.script);
   // A picture book whose pictures aren't all drawn yet: making them is what's next, so they come before listening.
   const picturesToMake = canPicture && Boolean(story.settings.pictures || story.art) && !(story.art?.cover && story.art.pages.every(Boolean));
   // Where the pictures go is settled once, as they first appear, and kept while the page is open: they don't jump away when the last one's drawn.

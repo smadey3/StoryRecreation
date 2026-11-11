@@ -241,7 +241,28 @@ export function CreateWizard({
   const STEPS = ["The pictures", "The story", "Voices & sounds", "Conjure"];
 
   // What it costs, before anything is spent: the storyteller's time, and the pictures (bought later, with the PIN).
-  const pictureBook = source === "idea" && Boolean(settings.pictures);
+  const pictureBook = (source === "idea" || source === "wild") && Boolean(settings.pictures);
+  // A picture book: drawn from the idea, or (from photos of a day out) the same moments drawn as a storybook.
+  const pictureBookChoice = (
+    <>
+      <label className="toggle">
+        <input
+          type="checkbox"
+          checked={Boolean(settings.pictures)}
+          onChange={(e) => setSettings((cur) => ({ ...cur, pictures: e.target.checked, artStyle: cur.artStyle ?? DEFAULT_ART_STYLE }))}
+        />
+        <span>
+          <b>📖 Make it a picture book</b>
+          <span className="muted small">
+            {source === "wild"
+              ? "The illustrator draws a cover and a picture for every page, the moments in your photos drawn as a storybook. Your photos are kept, and never sent to the illustrator: it draws from what the storyteller saw in them. You'll meet the characters first. The pictures cost a little extra."
+              : "The illustrator draws a cover and a picture for every page. You'll meet the characters first. The pictures cost a little extra."}
+          </span>
+        </span>
+      </label>
+      {settings.pictures && <StylePicker value={artStyleOf(settings.artStyle)} onChange={(s) => set("artStyle", s)} />}
+    </>
+  );
   const planning = pictureBook
     ? storytellerCost(status.storytellerRates, 3_000 + LENGTHS[settings.length].minutes * 140 * 1.5, 2_500 + pageCount * 150)
     : 0;
@@ -318,6 +339,7 @@ export function CreateWizard({
                     placeholder="We found a snail on the garden wall and Leo named him Professor Slime. He was very slow and very shiny."
                   />
                 </label>
+                {pictureBookChoice}
               </div>
             )}
 
@@ -337,21 +359,7 @@ export function CreateWizard({
                   <span>A title (optional)</span>
                   <input className="input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="The storyteller will choose one" />
                 </label>
-                <label className="toggle">
-                  <input
-                    type="checkbox"
-                    checked={Boolean(settings.pictures)}
-                    onChange={(e) => setSettings((cur) => ({ ...cur, pictures: e.target.checked, artStyle: cur.artStyle ?? DEFAULT_ART_STYLE }))}
-                  />
-                  <span>
-                    <b>📖 Make it a picture book</b>
-                    <span className="muted small">
-                      The illustrator draws a cover and a picture for every page. You&apos;ll meet the characters first. The pictures cost a
-                      little extra.
-                    </span>
-                  </span>
-                </label>
-                {settings.pictures && <StylePicker value={artStyleOf(settings.artStyle)} onChange={(s) => set("artStyle", s)} />}
+                {pictureBookChoice}
               </div>
             )}
             {quick && (
