@@ -77,7 +77,7 @@ a brand-new tale for the very same pictures.
 - **The same on every page.** The cover is drawn first, then every page from the chosen sketches, the cover and the
   nearest page already drawn (with the art style said first and again last), so the characters, colors and the way
   it's made stay the same all the way through, even on a page set somewhere else (a sunny bedroom after a moonlit
-  mountain). Redraw any page, with a note about what to change.
+  mountain). Redraw any page (from beside its words, or from its big view), with a note about what to change, or the whole book at once (*↻ Redraw the whole book*), following the note for every picture.
 - **You can see it working.** Whatever the illustrator is making shows where it will appear, with how many are
   ready and about how long is left, and a note follows you down the page until it's done (it's fine to leave, too).
   *The book* shows the cover and every page at a glance. Tap any sketch or picture to see it full size, and swipe

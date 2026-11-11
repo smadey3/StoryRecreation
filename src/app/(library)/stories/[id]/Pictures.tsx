@@ -66,9 +66,20 @@ const drawingWhat = (job: ArtJob, art: StoryArt) => {
   return `${redraw ? "Redrawing" : "Drawing"} ${t === 0 ? "the cover" : `page ${t}`}`;
 };
 
-/** Every picture of the book drawn so far, for the viewer, starting from this one (0 is the cover). */
-function bookViewer(art: StoryArt, page: number): { items: ViewerItem[]; start: number } {
-  const all = [art.cover, ...art.pages].flatMap((src, i) => (src ? [{ src, caption: i === 0 ? "The cover" : `Page ${i} of ${art.pages.length}`, page: i }] : []));
+/** Every picture of the book drawn so far, for the viewer, starting from this one (0 is the cover), each with a redraw. */
+function bookViewer(art: StoryArt, page: number, redraw?: (page: number) => void): { items: ViewerItem[]; start: number } {
+  const all = [art.cover, ...art.pages].flatMap((src, i) =>
+    src
+      ? [
+          {
+            src,
+            caption: i === 0 ? "The cover" : `Page ${i} of ${art.pages.length}`,
+            page: i,
+            ...(redraw ? { action: { label: "↻ Redraw this one", done: false, onClick: () => redraw(i) } } : {}),
+          },
+        ]
+      : [],
+  );
   return { items: all, start: Math.max(0, all.findIndex((x) => x.page === page)) };
 }
 
@@ -450,6 +461,26 @@ export function Pictures({
       return false;
     }
   };
+  /** Pictures to draw (or draw again): a note typed but not yet kept is kept first, so they follow it. */
+  const offerDrawing = async (what: string, pages: number[] | null, seconds: number) => {
+    if (noteChanged && !(await saveNote())) return;
+    offerPictures(what, pages?.length ?? todo, seconds, `/api/stories/${story.id}/art/draw`, pages ? { pages } : {});
+  };
+  const everyPicture = bookPictures(art.pages.length);
+  const redrawBook = () =>
+    offerDrawing(
+      `Every picture of “${story.title}”, drawn again`,
+      Array.from({ length: everyPicture }, (_, i) => i),
+      drawingSeconds(everyPicture, true, status.illustrator, status.pace?.drawing),
+    );
+  const redrawOne = (page: number) => {
+    setViewing(null);
+    void offerDrawing(
+      `Redraw ${page === 0 ? "the cover" : `page ${page}`} of “${story.title}”`,
+      [page],
+      drawingSeconds(1, page === 0, status.illustrator, status.pace?.drawing),
+    );
+  };
   const drawBook = async () => {
     // A note typed but not yet kept is kept first, so the pictures follow it.
     if (noteChanged && !(await saveNote())) return;
@@ -705,7 +736,7 @@ export function Pictures({
                         type="button"
                         role="listitem"
                         className={`book-thumb ${url ? "drawn" : ""} ${now === "drawing" ? "working" : ""} ${failed ? "failed" : ""}`}
-                        onClick={() => (url ? setViewing(bookViewer(art, page)) : scrollTo(`art-page-${page}`))}
+                        onClick={() => (url ? setViewing(bookViewer(art, page, redrawOne)) : scrollTo(`art-page-${page}`))}
                         aria-label={`${name}: ${state}`}
                       >
                         <span className="book-thumb-pic">
@@ -718,7 +749,11 @@ export function Pictures({
                     );
                   })}
                 </div>
-                {drawn > 0 && <p className="small muted" style={{ margin: 0 }}>Tap one to see it big. Each page&apos;s picture is also beside its words, below.</p>}
+                {drawn > 0 && (
+                  <p className="small muted" style={{ margin: 0 }}>
+                    Tap one to see it big, or to redraw it. Each page&apos;s picture is also beside its words, below.
+                  </p>
+                )}
               </>
             )}
             {drawn === 0 && !drawingBook && (
@@ -766,7 +801,7 @@ export function Pictures({
                 )}
                 {art.note && !noteChanged && (
                   <span className="small muted">
-                    ✓ The illustrator follows it for the cover and every page{drawn > 0 ? " drawn from now on (to change one already drawn, tap ↻ beside it)" : ""}.
+                    ✓ The illustrator follows it for the cover and every page{drawn > 0 ? " drawn from now on" : ""}.
                   </span>
                 )}
               </form>
@@ -812,7 +847,19 @@ export function Pictures({
                 </button>
               </p>
             )}
-            {todo === 0 && <p className="small muted" style={{ margin: 0 }}>Every picture is drawn. To redraw one, tap ↻ beside it.</p>}
+            {todo === 0 && !drawingBook && (
+              <>
+                <div>
+                  <button className="btn btn-ghost" onClick={() => void redrawBook()} disabled={busy || working}>
+                    ↻ Redraw the whole book · {status.illustrator ? formatMoney(each * everyPicture) : "free"}
+                  </button>
+                </div>
+                <p className="small muted" style={{ margin: 0 }}>
+                  Every picture drawn again{art.note ? ", following your note," : ""} in place of the ones there now. To redraw just one, tap it
+                  above.
+                </p>
+              </>
+            )}
             <p className="small purchase-terms" style={{ margin: 0 }}>
               {status.illustrator
                 ? `Pictures for this story so far: ${formatMoney(spent, "nothing yet")}.`

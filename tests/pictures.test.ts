@@ -340,6 +340,40 @@ test("drawing a book: the cover first, then each page from the chosen sketch and
   );
 });
 
+test("the whole book drawn again: every picture replaced, the new pages matching each other, within the approval", async () => {
+  process.env.GEMINI_API_KEY = "test-google-key";
+  mode = "ok";
+  const { getStoryArt } = await import("@/lib/server/db");
+  const { startDrawing } = await import("@/lib/server/art");
+  const { recordSpend, getPurchase } = await import("@/lib/server/spending");
+  const { picturePrice } = await import("@/lib/server/prices");
+  const { householdDir } = await import("@/lib/server/files");
+  const { household, story } = await pictureBook("Drawn Twice");
+  const all = [0, 1, 2, 3];
+  const first = recordSpend(household, { storyId: story, service: "pictures", kind: "draw", what: "Drew the book", approved: picturePrice() * 4 });
+  assert.ok(startDrawing(story, all, first));
+  await untilDrawn(story);
+  const before = getStoryArt(story)!;
+
+  asked.length = 0;
+  const again = recordSpend(household, { storyId: story, service: "pictures", kind: "draw", what: "Drew the book again", approved: picturePrice() * 4 });
+  assert.ok(startDrawing(story, all, again));
+  await untilDrawn(story);
+  const after = getStoryArt(story)!;
+  assert.equal(after.error, null);
+  assert.equal(asked.length, 4, "the cover and every page, once each");
+  for (const [i, rel] of [after.cover, ...after.pages].entries()) {
+    const old = [before.cover, ...before.pages][i]!;
+    assert.ok(rel && rel !== old, `picture ${i} is new`);
+    assert.ok(fs.existsSync(path.join(householdDir(household), rel)));
+    assert.ok(!fs.existsSync(path.join(householdDir(household), old)), `the old picture ${i} is gone`);
+  }
+  assert.deepEqual(getPurchase(again), { approved: picturePrice() * 4, spent: DRAWN * 4, pictures: 4 });
+  // Every page beside a page of the book (page 3 after a new one, pages 1 and 2 beside the old ones they replace)
+  const parts = (r: (typeof asked)[number]) => r.body.contents[0].parts as { text?: string; inlineData?: unknown }[];
+  for (const page of asked.slice(1)) assert.match(parts(page).at(-1)!.text!, /is another page of this same book/);
+});
+
 test("a picture that doesn't come is tried again by itself, within the same approval", async () => {
   process.env.GEMINI_API_KEY = "test-google-key";
   mode = "ok";

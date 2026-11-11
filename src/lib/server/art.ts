@@ -499,12 +499,15 @@ async function draw(storyId: string, targets: number[], purchaseId: string, note
     if (ref) sketches.set(c.id, ref);
   }
   let cover = await reference(householdId, art.cover, "the book's cover");
-  // The nearest page already drawn, shown for style (each read once).
+  // The nearest page already drawn, shown for style (each read once): one drawn in this job first, so a book drawn
+  // again follows its new pictures rather than the ones they replace.
   const pageRefs = new Map<string, Promise<Reference | null>>();
+  const fresh = new Set<number>();
   const nearestDrawn = (target: number) => {
     const pages = getStoryArt(storyId)?.pages ?? art.pages;
     const drawnPages = pages.map((rel, i) => ({ rel, page: i + 1 })).filter((p) => p.rel && p.page !== target && !isStandIn(p.rel));
-    const near = drawnPages.sort((a, b) => Math.abs(a.page - target) - Math.abs(b.page - target) || a.page - b.page)[0];
+    const rank = (p: { page: number }) => (fresh.has(p.page) ? 0 : 1);
+    const near = drawnPages.sort((a, b) => rank(a) - rank(b) || Math.abs(a.page - target) - Math.abs(b.page - target) || a.page - b.page)[0];
     if (!near?.rel) return Promise.resolve(null);
     if (!pageRefs.has(near.rel)) pageRefs.set(near.rel, reference(householdId, near.rel, "another page of this book"));
     return pageRefs.get(near.rel)!;
@@ -552,6 +555,7 @@ async function draw(storyId: string, targets: number[], purchaseId: string, note
       pages[target - 1] = rel;
       return { ...a, pages };
     });
+    if (target > 0) fresh.add(target);
     // A redrawn picture replaces the old one.
     if (replaced) await removeHouseholdFile(householdId, replaced).catch(() => undefined);
     if (target === 0) {
