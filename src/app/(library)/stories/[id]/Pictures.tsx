@@ -9,7 +9,7 @@ import { Spinner, WaitLine, WaitPill, useNow } from "@/components/Waiting";
 import { shrinkImage } from "@/lib/client/images";
 import { sendTrouble, sentWords, upload } from "@/lib/client/upload";
 import { StylePicker, bookEstimate } from "@/components/PictureBook";
-import { ART_STYLES, DEFAULT_ART_STYLE, SKETCHES, bookPictures, drawingSeconds, formatMoney, isStandIn, planningSeconds } from "@/lib/shared/art";
+import { ART_STYLES, DEFAULT_ART_STYLE, SKETCHES, artStyleOf, bookPictures, drawingSeconds, formatMoney, isStandIn, planningSeconds } from "@/lib/shared/art";
 import { aboutTime, timeLeft } from "@/lib/shared/options";
 import type { AppStatus, ArtCharacter, ArtJob, ArtStyle, DrawnBefore, Story, StoryArt } from "@/lib/shared/types";
 
@@ -190,7 +190,7 @@ export function Pictures({
 }) {
   const api = useApi();
   const art = story.art;
-  const [style, setStyle] = useState<ArtStyle>(art?.style ?? story.settings.artStyle ?? DEFAULT_ART_STYLE);
+  const [style, setStyle] = useState<ArtStyle>(artStyleOf(art?.style ?? story.settings.artStyle));
   const [looks, setLooks] = useState<Record<string, string>>({});
   // A note for every picture in the book ("make it daytime"), as it's being typed.
   const [bookNote, setBookNote] = useState(art?.note ?? "");

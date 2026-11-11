@@ -8,7 +8,7 @@ import { BookPicker } from "@/components/BookPicker";
 import { Steps, toTop } from "@/components/Steps";
 import { CreditButton, CreditNote } from "@/components/Credits";
 import { StylePicker, bookEstimate } from "@/components/PictureBook";
-import { DEFAULT_ART_STYLE, formatMoney, storytellerCost } from "@/lib/shared/art";
+import { DEFAULT_ART_STYLE, artStyleOf, formatMoney, storytellerCost } from "@/lib/shared/art";
 import type { PickedPhoto } from "@/lib/client/images";
 import { newShelving, shelfTrouble, shelfWords, shelveBook, type Shelving } from "@/lib/client/shelve";
 import { AGES, LENGTHS, MOODS, defaultSettings, estimateMinutes, madeUpBookTitle } from "@/lib/shared/options";
@@ -351,7 +351,7 @@ export function CreateWizard({
                     </span>
                   </span>
                 </label>
-                {settings.pictures && <StylePicker value={settings.artStyle ?? DEFAULT_ART_STYLE} onChange={(s) => set("artStyle", s)} />}
+                {settings.pictures && <StylePicker value={artStyleOf(settings.artStyle)} onChange={(s) => set("artStyle", s)} />}
               </div>
             )}
             {quick && (

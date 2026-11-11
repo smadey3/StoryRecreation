@@ -202,14 +202,12 @@ export type ArtStyle =
   | "watercolor"
   | "gouache"
   | "pencil"
-  | "pastel"
   | "block"
   | "papercut"
   | "felt"
   | "clay"
   | "glass"
   | "cartoon"
-  | "comic"
   | "shadow";
 
 /** A character the illustrator draws, and the sketches the family chose between. */

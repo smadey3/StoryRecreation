@@ -170,14 +170,12 @@ const PALETTES: Record<ArtStyle, { sky: [string, string]; hills: [string, string
   watercolor: { sky: ["#f7efd9", "#cfe3ea"], hills: ["#b9d3a8", "#8fb388"], ink: "#3b2a1e", glow: "#f6d98b" },
   gouache: { sky: ["#ffe7a8", "#f7a679"], hills: ["#e2794f", "#b8433a"], ink: "#3a1d10", glow: "#fff2c4" },
   pencil: { sky: ["#f4ead6", "#e8dcc2"], hills: ["#c9b28a", "#a68b5b"], ink: "#4a3a28", glow: "#f2c46a" },
-  pastel: { sky: ["#1c2a4a", "#3b4f7a"], hills: ["#5b7aa6", "#33496f"], ink: "#f4e9d0", glow: "#ffd98a" },
   block: { sky: ["#f3ead2", "#e6d6b0"], hills: ["#2f6f73", "#1d4447"], ink: "#1b1b1b", glow: "#e0533d" },
   papercut: { sky: ["#d9efe9", "#9fcfc4"], hills: ["#4f9a8a", "#2f6b5f"], ink: "#123a33", glow: "#f6e3a1" },
   felt: { sky: ["#f3e6d6", "#e2c9b0"], hills: ["#9cb27a", "#6f8a52"], ink: "#4a2f24", glow: "#f2b85c" },
   clay: { sky: ["#f6dcc4", "#e9b796"], hills: ["#8fbf7f", "#5f9a5a"], ink: "#4b2b1f", glow: "#ffd27a" },
   glass: { sky: ["#2b5fa8", "#6aa5d8"], hills: ["#2f8f4e", "#1d5e33"], ink: "#1a1a1a", glow: "#ffcf3f" },
   cartoon: { sky: ["#bfe8ff", "#ffe9a8"], hills: ["#7ccf6b", "#4aa25a"], ink: "#24323f", glow: "#ffd23f" },
-  comic: { sky: ["#fff3c4", "#8fd3f4"], hills: ["#55b85c", "#2e7d3c"], ink: "#111111", glow: "#ffde3b" },
   shadow: { sky: ["#f6b25e", "#c4502f"], hills: ["#1b1210", "#000000"], ink: "#1b1210", glow: "#ffe2a6" },
 };
 

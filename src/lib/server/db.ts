@@ -7,6 +7,7 @@ import { DEFAULT_SHELVES, namedByItsStory } from "@/lib/shared/options";
 import { languageOf } from "@/lib/shared/languages";
 import { gutenbergCover } from "@/lib/shared/gutenberg";
 import { pdfOfferFor, pdfSeconds } from "@/lib/shared/pdf";
+import { artStyleOf } from "@/lib/shared/art";
 import type {
   Book,
   BookKind,
@@ -296,6 +297,18 @@ export function artUrls(art: StoryArt | null): StoryArt | null {
     pages: art.pages.map(url),
     characters: art.characters.map((c) => ({ ...c, drawing: url(c.drawing), sketches: c.sketches.map((p) => fileUrl(p)!) })),
   };
+}
+
+/** A picture book as stored, in a style still offered (a book in one taken away carries on in the default). */
+function storedArt(value: unknown): StoryArt | null {
+  const art = json<StoryArt>(value);
+  return art && { ...art, style: artStyleOf(art.style) };
+}
+
+/** A story's settings as stored, with a picture style still offered. */
+function storedSettings(value: unknown): StorySettings {
+  const settings = json<StorySettings>(value)!;
+  return settings?.artStyle ? { ...settings, artStyle: artStyleOf(settings.artStyle) } : settings;
 }
 
 function json<T>(value: unknown): T | null {
@@ -716,7 +729,7 @@ function toStory(r: Row): Story {
     mode: r.mode as StoryMode,
     title: r.title as string,
     synopsis: (r.synopsis as string | null) ?? null,
-    settings: json<StorySettings>(r.settings)!,
+    settings: storedSettings(r.settings),
     script: json<StoryScript>(r.script),
     status: r.status as StoryStatus,
     progress: json<StoryProgress>(r.progress),
@@ -728,7 +741,7 @@ function toStory(r: Row): Story {
     playCount: Number(r.play_count ?? 0),
     lastPlayedAt: (r.last_played_at as number | null) ?? null,
     createdAt: r.created_at as number,
-    art: artUrls(json<StoryArt>(r.art)),
+    art: artUrls(storedArt(r.art)),
   };
 }
 
@@ -772,21 +785,21 @@ export function listStoriesForBackup(householdId: string): {
     audioPath: (r.audio_path as string | null) ?? null,
     duration: (r.duration as number | null) ?? null,
     createdAt: r.created_at as number,
-    art: json<StoryArt>(r.art),
+    art: storedArt(r.art),
   }));
 }
 
 /** A picture book's pictures as stored, with paths (for the illustrator, which reads them). */
 export function getStoryArt(id: string): StoryArt | null {
   const r = db().prepare("SELECT art FROM stories WHERE id = ?").get(id) as Row | undefined;
-  return json<StoryArt>(r?.art);
+  return storedArt(r?.art);
 }
 
 /** A family's picture books, newest first, with their pictures as stored (to offer a character drawn before). */
 export function familyStoryArt(householdId: string): { id: string; title: string; art: StoryArt }[] {
   return (db().prepare("SELECT id, title, art FROM stories WHERE household_id = ? AND art IS NOT NULL ORDER BY created_at DESC").all(householdId) as Row[]).flatMap(
     (r) => {
-      const art = json<StoryArt>(r.art);
+      const art = storedArt(r.art);
       return art ? [{ id: r.id as string, title: r.title as string, art }] : [];
     },
   );
@@ -1256,7 +1269,7 @@ export function madeStories(
     bookId: r.book_id as string,
     bookTitle: r.book_title as string,
     bookKind: r.book_kind as BookKind,
-    settings: json<StorySettings>(r.settings)!,
+    settings: storedSettings(r.settings),
     createdAt: r.created_at as number,
   }));
 }

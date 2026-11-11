@@ -605,16 +605,25 @@ test("each picture style's example: drawn once, small, the way a page is, and dr
   assert.equal(asked.length, before + styles.length, "kept, not drawn again");
 
   // A style described differently is drawn again, and its old example goes.
-  const old = sampleFile("comic")!;
-  const was = ART_STYLES.comic.prompt;
-  ART_STYLES.comic.prompt = `${was} (with more dots)`;
+  const old = sampleFile("cartoon")!;
+  const was = ART_STYLES.cartoon.prompt;
+  ART_STYLES.cartoon.prompt = `${was} (with more bounce)`;
   try {
-    assert.equal(styleSamples().samples.comic, null);
+    assert.equal(styleSamples().samples.cartoon, null);
     await samplesDrawn();
     assert.equal(asked.length, before + styles.length + 1, "only that one");
-    assert.ok(sampleFile("comic"));
+    assert.ok(sampleFile("cartoon"));
     assert.equal(fs.existsSync(old), false);
   } finally {
-    ART_STYLES.comic.prompt = was;
+    ART_STYLES.cartoon.prompt = was;
   }
+});
+
+test("a book saved in a style that's no longer offered carries on in the default style", async () => {
+  const { changeStoryArt, getStoryArt, getStoryById, updateStory } = await import("@/lib/server/db");
+  const { story } = await pictureBook("The Pastel Moon");
+  changeStoryArt(story, (art) => ({ ...art!, style: "pastel" as never }));
+  updateStory(story, { settings: { ...getStoryById(story)!.settings, artStyle: "comic" as never } });
+  assert.equal(getStoryArt(story)!.style, "watercolor");
+  assert.equal(getStoryById(story)!.settings.artStyle, "watercolor");
 });

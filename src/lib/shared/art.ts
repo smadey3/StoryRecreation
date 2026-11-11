@@ -32,14 +32,6 @@ export const ART_STYLES: Record<ArtStyle, { label: string; emoji: string; blurb:
       "a colored pencil and wax crayon drawing on toothy paper: every area filled with visible hatching and pencil strokes, slightly wobbly hand-drawn outlines, the paper's texture showing through the color, soft layered tones. Clearly drawn by hand with pencils: not painted, not digital",
     alone: "on plain drawing paper",
   },
-  pastel: {
-    label: "Chalk pastel",
-    emoji: "🖍️",
-    blurb: "Dreamy chalk on dark paper",
-    prompt:
-      "a soft chalk pastel drawing on dark navy-blue paper: glowing colors rubbed and smudged with fingers, visible chalky strokes and grainy texture, the dark paper showing through between the strokes, so light seems to glow out of the dark. Drawn by hand with pastels: not painted, no hard outlines, not digital",
-    alone: "on plain dark blue pastel paper",
-  },
   block: {
     label: "Block print",
     emoji: "🪵",
@@ -88,14 +80,6 @@ export const ART_STYLES: Record<ArtStyle, { label: string; emoji: string; blurb:
       "a bright, playful cartoon: clean, confident outlines of even thickness, flat cheerful colors with simple cel shading, big expressive eyes and bouncy, exaggerated proportions, like a modern animated children's TV show. Simple and bold: no painterly texture, no hatching, not realistic, not 3D",
     alone: "on a plain, flat pale background",
   },
-  comic: {
-    label: "Comic book",
-    emoji: "💥",
-    blurb: "Bold ink, bright colors and dots",
-    prompt:
-      "a page from a classic printed comic book: thick black inked outlines, heavy solid black shadows, bold saturated primary colors printed flat, big visible halftone (Ben-Day) dots in the shading and the sky, a dramatic angle, speed lines and starburst glows around bright lights, on the slightly grainy, yellowed paper of an old comic book. One single big panel filling the whole picture: no panel borders, speech bubbles, sound-effect words or captions. A bold pop-art comic book look: not a gentle storybook illustration, not watercolor, not a pencil sketch, not 3D",
-    alone: "on a plain, flat pale background",
-  },
   shadow: {
     label: "Shadow puppets",
     emoji: "🌙",
@@ -107,6 +91,10 @@ export const ART_STYLES: Record<ArtStyle, { label: string; emoji: string; blurb:
 };
 
 export const DEFAULT_ART_STYLE: ArtStyle = "watercolor";
+
+/** A style the illustrator still paints in: one no longer offered (or never known) is the default. */
+export const artStyleOf = (value: unknown): ArtStyle =>
+  typeof value === "string" && Object.prototype.hasOwnProperty.call(ART_STYLES, value) ? (value as ArtStyle) : DEFAULT_ART_STYLE;
 
 export const SCENE_EFFECTS: Record<SceneEffect, string> = {
   none: "",
