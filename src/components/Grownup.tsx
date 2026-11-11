@@ -45,8 +45,8 @@ async function rawRequest<T>(url: string, init: RequestInit & { json?: unknown }
     headers: json !== undefined ? { "Content-Type": "application/json", ...(rest.headers ?? {}) } : rest.headers,
     body: json !== undefined ? JSON.stringify(json) : rest.body,
   });
-  const data = (await res.json().catch(() => ({}))) as { error?: string; code?: string };
-  if (!res.ok) throw new ApiError(data.error ?? `Request failed (${res.status})`, res.status, data.code);
+  const data = (await res.json().catch(() => ({}))) as { error?: string; code?: string } & Record<string, unknown>;
+  if (!res.ok) throw new ApiError(data.error ?? `Request failed (${res.status})`, res.status, data.code, data);
   return data as T;
 }
 

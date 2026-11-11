@@ -151,8 +151,12 @@ export function approvePurchase(ctx: Ctx, approval: Approval | undefined, price:
     if (ctx.household.pin_digits === null) rememberPinDigits(ctx.household.id, pin.length);
     unlockDevice(ctx, approval?.remember === true);
   }
+  // A picture's price moves by fractions of a cent as pictures are drawn (it follows what they really cost), so the
+  // price said yes to is the one shown, to the cent (rounded up, as every price is shown). A real change is said, with
+  // the new price for the page to show.
   const approved = Number(approval?.micros);
-  if (!Number.isFinite(approved) || approved < price) {
-    throw new HttpError(409, `The price has changed to ${formatMoney(price)}. Please look again before saying yes.`, "price_changed");
+  const cents = (micros: number) => Math.ceil(micros / 10_000);
+  if (!Number.isFinite(approved) || cents(approved) < cents(price)) {
+    throw new HttpError(409, `The price has changed to ${formatMoney(price)}. Please look again before saying yes.`, "price_changed", { price });
   }
 }

@@ -131,12 +131,12 @@ test("a purchase is a grown-up's yes: the PIN on a locked device (remembered for
   assert.equal(code(() => approvePurchase(locked(), { micros: 100 }, 100)), "pin_required", "a locked device asks for the PIN");
   assert.equal(code(() => approvePurchase(locked(), { pin: "1111", micros: 100 }, 100)), "wrong_pin");
   assert.equal(getHousehold(id)!.pin_digits, null, "a PIN from before lengths were kept, not entered right yet");
-  assert.equal(code(() => approvePurchase(locked(), { pin: "2468", micros: 99 }, 100)), "price_changed", "never more than was approved");
+  assert.equal(code(() => approvePurchase(locked(), { pin: "2468", micros: 990_000 }, 1_000_000)), "price_changed", "never more than was approved (99¢ shown, $1.00 now)");
   assert.equal(getHousehold(id)!.pin_digits, 4, "entered right once: its length is kept, so the pad checks it as soon as it's all in");
   assert.equal(code(() => approvePurchase(locked(), { pin: "2468", micros: 100 }, 100)), "approved");
   assert.equal(minutesLeft(), 30, "the PIN unlocks this device for half an hour");
   assert.equal(code(() => approvePurchase(unlocked(), { micros: 100 }, 100)), "approved", "then a yes is enough here: no PIN again");
-  assert.equal(code(() => approvePurchase(unlocked(), { micros: 99 }, 100)), "price_changed");
+  assert.equal(code(() => approvePurchase(unlocked(), { micros: 990_000 }, 1_000_000)), "price_changed");
   assert.equal(code(() => approvePurchase(locked(), { pin: "2468", micros: 100, remember: true }, 100)), "approved");
   assert.equal(Math.round(minutesLeft() / 60 / 24), 30, "\"don't ask again on this device for 30 days\"");
   approvePurchase(locked(), { pin: "2468", micros: 100 }, 100);

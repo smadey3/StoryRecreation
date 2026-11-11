@@ -38,7 +38,10 @@ export function PurchaseDialog({ offer, onDone }: { offer: PurchaseOffer; onDone
   const [first, setFirst] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const total = offer.each * offer.pictures;
+  // The price as the server last said it is, once it's said it changed: shown, and what the next yes approves.
+  const [priced, setPriced] = useState<number | null>(null);
+  const total = priced ?? offer.each * offer.pictures;
+  const each = total / Math.max(1, offer.pictures);
 
   useEffect(() => {
     api.get<{ pinSet: boolean; digits?: number | null; unlocked?: boolean }>("/api/pin").then(
@@ -67,7 +70,10 @@ export function PurchaseDialog({ offer, onDone }: { offer: PurchaseOffer; onDone
         setPinSet(false);
         setUnlocked(false);
         setDigits(PIN_DIGITS);
-      } else setError(err instanceof Error ? err.message : "That didn't work.");
+      } else {
+        if (err instanceof ApiError && err.code === "price_changed" && typeof err.details?.price === "number") setPriced(err.details.price);
+        setError(err instanceof Error ? err.message : "That didn't work.");
+      }
       setBusy(false);
       return false;
     }
@@ -119,7 +125,7 @@ export function PurchaseDialog({ offer, onDone }: { offer: PurchaseOffer; onDone
           <div className="purchase-price">{offer.real ? formatMoney(total) : "Free"}</div>
           <div className="small purchase-terms">
             {offer.real
-              ? `${offer.pictures} ${offer.pictures === 1 ? "picture" : "pictures"}, about ${formatMoney(offer.each)} each, charged to your Google account. Storyhollow never spends more than ${formatMoney(total)}.`
+              ? `${offer.pictures} ${offer.pictures === 1 ? "picture" : "pictures"}, about ${formatMoney(each)} each, charged to your Google account. Storyhollow never spends more than ${formatMoney(total)}.`
               : `Stand-in pictures, while the illustrator isn't set up. With it, this would be about ${formatMoney(total)}.`}
           </div>
           {offer.seconds ? <div className="small purchase-time">⏱️ Ready in {aboutTime(offer.seconds)}. You can carry on while it works.</div> : null}

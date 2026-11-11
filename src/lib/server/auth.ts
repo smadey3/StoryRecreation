@@ -41,6 +41,8 @@ export class HttpError extends Error {
     public status: number,
     message: string,
     public code?: string,
+    /** More for the page to act on (a price that changed, say), sent beside the message. */
+    public details?: Record<string, unknown>,
   ) {
     super(message);
   }
@@ -131,7 +133,7 @@ export function route<A extends unknown[]>(fn: (...args: A) => Promise<Response>
       return await fn(...args);
     } catch (err) {
       if (err instanceof HttpError) {
-        return Response.json({ error: err.message, code: err.code }, { status: err.status });
+        return Response.json({ ...err.details, error: err.message, code: err.code }, { status: err.status });
       }
       console.error(err);
       return Response.json({ error: "Something went wrong in the library." }, { status: 500 });
