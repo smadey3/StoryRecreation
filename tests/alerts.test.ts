@@ -100,6 +100,16 @@ test("the storyteller's credit running out is emailed once a day while it lasts,
   assert.equal(await alertStorytellerOutOfCredit(), false, "not again the same day");
 });
 
+test("the illustrator's Google credit running out is emailed once a day while it lasts, saying how to fix it", async () => {
+  const { alertIllustratorOutOfCredit } = await import("@/lib/server/alerts");
+  assert.equal(await alertIllustratorOutOfCredit(), true);
+  const email = emails.at(-1)!;
+  assert.equal(email.subject, "Storyhollow: the illustrator's Google credit has run out");
+  assert.match(email.text, /aistudio\.google\.com \(Billing\)/);
+  assert.match(email.text, /weren't charged, and nothing already drawn is lost/);
+  assert.equal(await alertIllustratorOutOfCredit(), false, "not again the same day");
+});
+
 test("a failed backup is emailed at most once a day, and low voice credit once a month", async () => {
   const { alertBackupFailed, checkVoiceCreditLow } = await import("@/lib/server/alerts");
   const { forgetVoiceCredits } = await import("@/lib/server/credits");

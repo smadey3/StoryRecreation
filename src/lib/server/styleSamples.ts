@@ -3,7 +3,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { config } from "./config";
 import { sceneRequest } from "./art";
-import { drawPicture, illustratorReady, type PictureRequest } from "./illustrator";
+import { drawPicture, IllustratorOutOfCredit, illustratorReady, type PictureRequest } from "./illustrator";
 import { ART_STYLES, formatMoney } from "@/lib/shared/art";
 import type { ArtStyle } from "@/lib/shared/types";
 
@@ -100,7 +100,8 @@ async function drawSample(style: ArtStyle): Promise<void> {
     console.log(`Drew the example of the ${ART_STYLES[style].label} style (${formatMoney(picture.cost)}).`);
   } catch (err) {
     const failed = state.failed.get(style);
-    state.failed.set(style, { at: Date.now(), times: (failed?.times ?? 0) + 1 });
+    // (Out of credit isn't the example's fault: it's tried again once there's credit, however often that was.)
+    state.failed.set(style, { at: Date.now(), times: (failed?.times ?? 0) + (err instanceof IllustratorOutOfCredit ? 0 : 1) });
     console.warn(`The example of the ${ART_STYLES[style].label} style couldn't be drawn:`, err instanceof Error ? err.message : err);
   }
 }

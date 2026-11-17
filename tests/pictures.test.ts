@@ -14,7 +14,7 @@ import type { StoryArt, StoryScript } from "@/lib/shared/types";
 // A 1×1 PNG: what the fake Google draws.
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
 
-let mode: "ok" | "forbidden" | "blocked" = "ok";
+let mode: "ok" | "forbidden" | "blocked" | "broke" | "broke-429" = "ok";
 const asked: { headers: http.IncomingHttpHeaders; url: string; body: Record<string, any> }[] = [];
 // A picture whose prompt has one of these in it comes back empty, once (as Google's sometimes do).
 const emptyOnce = new Set<string>();
@@ -33,6 +33,10 @@ before(async () => {
       if (mode === "forbidden") {
         res.statusCode = 403;
         return res.end(JSON.stringify({ error: { message: "API key not valid.", status: "PERMISSION_DENIED" } }));
+      }
+      if (mode === "broke" || mode === "broke-429") {
+        res.statusCode = mode === "broke" ? 402 : 429;
+        return res.end(JSON.stringify({ error: { code: res.statusCode, message: "Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing." } }));
       }
       if (mode === "blocked") {
         return res.end(JSON.stringify({ promptFeedback: { blockReason: "SAFETY" }, usageMetadata: { promptTokenCount: 500 } }));
@@ -644,4 +648,26 @@ test("a day out told from the family's photos can be a picture book, its pages p
   assert.match(fromPhotos, /Page 2 \(the family's photo shows: A boy in a green jersey holding a basketball by a red wall\)/);
   const fromIdea = pictureBrief(day, { description: "", heroes: [], mood: "Heartwarming" });
   assert.doesNotMatch(fromIdea, /photo/, "an idea's pages are planned from the words alone");
+});
+
+test("Google's prepaid picture credit running out says so plainly, isn't tried again, and doesn't use up an example's tries", async () => {
+  process.env.GEMINI_API_KEY = "test-google-key";
+  const { drawPicture, IllustratorOutOfCredit } = await import("@/lib/server/illustrator");
+  const { sampleRequest } = await import("@/lib/server/styleSamples");
+  try {
+    for (const broke of ["broke", "broke-429"] as const) {
+      mode = broke;
+      const before = asked.length;
+      const err = await drawPicture(sampleRequest("felt")).then(
+        () => null,
+        (e: unknown) => e,
+      );
+      assert.ok(err instanceof IllustratorOutOfCredit, `${broke}: ${String(err)}`);
+      assert.match(err.message, /out of prepaid credit.*aistudio\.google\.com, Billing/);
+      assert.equal(err.retry, false, "trying again won't help until it's topped up");
+      assert.equal(asked.length, before + 1, "asked once, not again");
+    }
+  } finally {
+    mode = "ok";
+  }
 });

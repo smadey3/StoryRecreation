@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { alertIllustratorOutOfCredit } from "./alerts";
 import { config } from "./config";
 import { pictureCost } from "./prices";
 import { ART_STYLES } from "@/lib/shared/art";
@@ -19,6 +20,18 @@ export class IllustratorError extends Error {
     super(message);
   }
 }
+
+/** Google's prepaid credit for the illustrator is used up: nothing will draw until a grown-up tops it up. */
+export class IllustratorOutOfCredit extends IllustratorError {
+  constructor() {
+    super(
+      "The Google account that draws the pictures is out of prepaid credit. A grown-up can add credit in Google AI Studio (aistudio.google.com, Billing), then try again.",
+    );
+  }
+}
+
+/** Google's answer when the prepaid credit is used up: 402 (or, from before it said so, a 429 that says why). */
+const creditGone = (status: number, detail = "") => status === 402 || (status === 429 && /prepay(ment)? credits? (are|is) depleted/i.test(detail));
 
 export interface Reference {
   data: Buffer;
@@ -91,11 +104,17 @@ export async function drawPicture(req: PictureRequest): Promise<Picture> {
       res = null;
     }
     if (res && res.status !== 429 && res.status < 500) break;
+    // (A 429 that says the credit is used up isn't busy: asking again won't help.)
+    if (res?.status === 429 && creditGone(429, ((await res.clone().json().catch(() => ({}))) as GeminiResponse).error?.message)) break;
     if (attempt === 0) await wait(4000);
   }
   if (!res) throw new IllustratorError("The illustrator couldn't be reached. Please try again in a minute.", 0, true);
 
   const data = (await res.json().catch(() => ({}))) as GeminiResponse;
+  if (creditGone(res.status, data.error?.message)) {
+    void alertIllustratorOutOfCredit().catch(() => undefined);
+    throw new IllustratorOutOfCredit();
+  }
   if (!res.ok) throw new IllustratorError(errorMessage(res.status, data.error?.message), 0, res.status === 429 || res.status >= 500);
 
   const cost = pictureCost(config.pictureModel, data.usageMetadata ?? {});
@@ -139,7 +158,7 @@ function errorMessage(status: number, detail: string | undefined): string {
   if (status === 401 || status === 403) return `The Google key wasn't accepted. Check GEMINI_API_KEY, and that billing is turned on for it${said}.`;
   if (status === 404) return `The picture model "${config.pictureModel}" wasn't found. Check PICTURE_MODEL${said}.`;
   if (status === 429) return "The illustrator is busy, or the Google account has reached its limit for now. Please try again in a few minutes.";
-  return `The illustrator hit a snag (${status}). Please try again.`;
+  return `The illustrator hit a snag (${status})${said}. Please try again.`;
 }
 
 // ------------------------------------------------------------- stand-ins

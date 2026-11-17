@@ -120,6 +120,24 @@ export async function alertStorytellerOutOfCredit(): Promise<boolean> {
   });
 }
 
+/**
+ * The illustrator's prepaid Google credit has run out (Google turns every picture down until it's topped up). Once a day
+ * while it lasts.
+ */
+export async function alertIllustratorOutOfCredit(): Promise<boolean> {
+  return sendAlert({
+    kind: "credits",
+    key: "illustrator",
+    subject: "the illustrator's Google credit has run out",
+    lines: [
+      "Google turned the illustrator down because the prepaid credit for the Gemini API is used up, so no pictures can be drawn (sketches, covers or pages) until it's topped up.",
+      "Add credit at aistudio.google.com (Billing). Then press the button to draw again: the pictures Google turned down weren't charged, and nothing already drawn is lost.",
+    ],
+    link: { label: "Open Storyhollow", path: "/" },
+    quietFor: 20 * HOUR,
+  });
+}
+
 /** Under a tenth of the month's voice credit left: once a month. */
 export async function checkVoiceCreditLow(): Promise<boolean> {
   const credits = await voiceCredits();
