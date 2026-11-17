@@ -291,13 +291,27 @@ export function Studio({
         </div>
       )}
 
-      {picturesFirst && pictures}
-
+      {/* What's next, without scrolling: recording a story that's written, or listening to one that's ready. (The pictures
+          needn't be drawn first: each joins the story as it's made. The same buttons wait again at the end of the words.) */}
+      {script && story.status === "draft" && editing && (
+        <div className="center stack" style={{ ["--gap" as string]: "8px" }}>
+          <div>
+            <CreditButton needed={chars} className="btn btn-lg btn-velvet" onClick={record} disabled={busy || (!status.voices && !status.demoMode)}>
+              🎙️ Record the story
+            </CreditButton>
+          </div>
+          <p className="small faint" style={{ margin: 0 }}>
+            Or read it over below first: any word, line or voice can be changed before it&apos;s recorded.
+            {canPicture && picturesToMake ? " The pictures needn't be drawn first: each one joins the story as it's made." : ""}
+          </p>
+          <CreditNote needed={chars} />
+        </div>
+      )}
       {story.status === "ready" && story.audioUrl && (
-        <div className="panel center stack">
-          <div className="row" style={{ justifyContent: "center" }}>
-            <Link href={`/play/${story.id}`} className={picturesToMake ? "btn btn-ghost" : "btn btn-lg"}>
-              ▶ {picturesToMake ? "Listen now, before the pictures" : "Listen now"}
+        <div className="center stack" style={{ ["--gap" as string]: "8px" }}>
+          <div>
+            <Link href={`/play/${story.id}`} className="btn btn-lg">
+              ▶ Listen now
             </Link>
           </div>
           {picturesToMake && (
@@ -305,6 +319,13 @@ export function Studio({
               Until a page&apos;s picture is drawn, it shows the cover. Each one joins the story as it&apos;s made, with no need to record it again.
             </p>
           )}
+        </div>
+      )}
+
+      {picturesFirst && pictures}
+
+      {story.status === "ready" && story.audioUrl && (
+        <div className="panel center stack">
           {story.mode === "create" && (
             <div>
               <Link href={`/create?like=${story.id}`} className="btn btn-ghost btn-sm">
